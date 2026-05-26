@@ -535,7 +535,10 @@ test("VB-S11: processes images when vision-capable model has combo mapping", asy
   // Vision bridge should have processed the image
   assert.strictEqual(result.block, false);
   assert.ok(visionCallCount > startCallCount, "Expected vision model to be called");
-  assert.ok(result.modifiedPayload !== undefined, "Expected modifiedPayload when combo mapping forces vision bridge");
+  assert.ok(
+    result.modifiedPayload !== undefined,
+    "Expected modifiedPayload when combo mapping forces vision bridge"
+  );
 });
 
 test("VB-S11b: passthroughs when vision-capable model has NO combo mapping", async () => {
