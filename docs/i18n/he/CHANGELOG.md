@@ -4,6 +4,8 @@
 
 ---
 
+## [3.8.25] — 2026-06-14
+
 ## [3.8.26] — TBD
 
 _See English CHANGELOG for v3.8.26 details._
