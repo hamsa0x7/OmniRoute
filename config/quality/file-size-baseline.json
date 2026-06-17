@@ -1,5 +1,6 @@
 {
   "_comment": "Catraca de tamanho (check-file-size.mjs). frozen so pode encolher; arquivos novos <= cap. --update ratcheta.",
+  "_rebaseline_2026_06_17_4098_wafer": "PR #4098 own growth: providers.ts 3159->3169 (+10 = Wafer AI catalog entry, a single Zod-validated provider record in the providers map — pure data, standard per-provider addition; bumps catalog 227->228). Cohesive catalog growth; not extractable.",
   "_rebaseline_2026_06_17_4096_field_downgrade": "PR #4096 own growth: base.ts 1292->1334 (+42 = generic 400 field-downgrade retry at the executor fetch loop — on an upstream 400 that names an unsupported field, strip it via providerFieldStrips and retry once, plus Groq field stripping wiring). The strip table lives in the new open-sse/config/providerFieldStrips.ts (<cap). Cohesive resilience logic at the existing fetch chokepoint; not extractable.",
   "_rebaseline_2026_06_17_4071_vision_routing": "PR #4071 own growth: combo.ts 5283->5289 (+6 = vision-aware routing fix in getTargetCompatibilityFailures — image requests now require supportsVision===true, treating null/unknown as incompatible, with an explanatory comment block; plus exporting filterTargetsByRequestCompatibility for the regression test). The accompanying capability heuristic lives in src/lib/modelCapabilities.ts (419 LOC, <cap). Cohesive bug fix at the existing compatibility-filter chokepoint; not extractable.",
   "_rebaseline_2026_06_17_4070_orcarouter": "PR #4070 own growth: providers.ts 3147->3159 (+12 = the OrcaRouter catalog entry, a single Zod-validated provider record { id/alias/name/icon/color/textIcon/passthroughModels/website/apiHint } in the providers map — pure data, the standard per-provider addition; bumps the catalog 226->227). Cohesive catalog growth, not extractable.",
@@ -129,7 +130,7 @@
     "src/shared/components/analytics/charts.tsx": 1558,
     "src/shared/constants/cliTools.ts": 875,
     "src/shared/constants/pricing.ts": 1581,
-    "src/shared/constants/providers.ts": 3159,
+    "src/shared/constants/providers.ts": 3169,
     "src/shared/constants/sidebarVisibility.ts": 1100,
     "src/shared/services/cliRuntime.ts": 1090,
     "src/shared/validation/schemas.ts": 2523,
