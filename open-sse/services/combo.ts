@@ -99,6 +99,7 @@ import type {
   HandleRoundRobinOptions,
   ResolvedComboTarget,
   AutoProviderCandidate,
+  ComboRuntimeStep,
   HistoricalLatencyStatsEntry,
 } from "./combo/types.ts";
 
@@ -106,9 +107,13 @@ import {
   MAX_RR_COUNTERS,
   rrCounters,
   rrStickyTargets,
+  weightedStickyTargets,
   clampStickyRoundRobinTargetLimit,
+  clampStickyWeightedTargetLimit,
   getStickyRoundRobinStartIndex,
   recordStickyRoundRobinSuccess,
+  getStickyWeightedExecutionKey,
+  recordStickyWeightedSuccess,
 } from "./combo/rrState.ts";
 import { validateResponseQuality, toRetryAfterDisplayValue } from "./combo/validateQuality.ts";
 import {
@@ -143,6 +148,7 @@ import {
   getModelContextLimitForModelString,
   resolveComboTargets,
   resolveWeightedTargets,
+  resolveWeightedStepGroups,
   sortTargetsByContextSize,
 } from "./combo/comboStructure.ts";
 import {
@@ -697,10 +703,31 @@ export async function handleComboChat({
   const maxSetRetries = config.maxSetRetries ?? 0;
   const setRetryDelayMs = resolveDelayMs(config.setRetryDelayMs, 2000);
 
+  const isTargetSelectableForWeighted = async (target: ResolvedComboTarget): Promise<boolean> => {
+    const rawModel = parseModel(target.modelStr).model || target.modelStr;
+    if (target.provider && getCircuitBreaker(target.provider).getStatus().state === "OPEN") return false;
+    if (
+      resilienceSettings.providerCooldown.enabled &&
+      Boolean(target.provider && target.provider !== "unknown") &&
+      isProviderInCooldown(target.provider, target.connectionId ?? undefined, resilienceSettings)
+    ) {
+      return false;
+    }
+    if (
+      target.provider &&
+      rawModel &&
+      isModelLocked(target.provider, target.connectionId || "", rawModel)
+    ) {
+      return false;
+    }
+    return isModelAvailable ? await isModelAvailable(target.modelStr, target) : true;
+  };
+
   // #2562: Expand provider-wildcard steps (e.g. `fta/*`, `openai/gpt-4*`) into
   // concrete model entries sourced from the live synced-models catalog + registry.
-  // Must run before resolveComboTargets so that wildcard-originated steps are
-  // treated identically to hand-authored entries by all downstream logic.
+  // Must run before any step-group / target resolution so that wildcard-originated
+  // steps are treated identically to hand-authored entries by all downstream logic
+  // (including the sticky-weighted eligibility pass below).
   const expandedCombo = await expandProviderWildcardsInCombo(combo);
   const expandedAllCombos = allCombos
     ? Array.isArray(allCombos)
@@ -713,21 +740,66 @@ export async function handleComboChat({
         }
     : allCombos;
 
-  let orderedTargets =
+  const stickyWeightedLimit = clampStickyWeightedTargetLimit(
+    (config as Record<string, unknown>).stickyWeightedLimit
+  );
+  if (
+    strategy === "weighted" &&
+    !weightedStickyTargets.has(combo.name) &&
+    weightedStickyTargets.size >= MAX_RR_COUNTERS
+  ) {
+    const oldest = weightedStickyTargets.keys().next().value;
+    if (oldest !== undefined) weightedStickyTargets.delete(oldest);
+  }
+  let stepGroups: Array<{ step: ComboRuntimeStep; targets: ResolvedComboTarget[] }> | undefined;
+  const weightedEligibleKeys = new Set<string>();
+  if (strategy === "weighted") {
+    stepGroups = resolveWeightedStepGroups(expandedCombo, expandedAllCombos);
+    for (const group of stepGroups) {
+      const availability = await Promise.all(group.targets.map(isTargetSelectableForWeighted));
+      if (availability.some(Boolean)) weightedEligibleKeys.add(group.step.executionKey);
+    }
+  }
+  const rawStickyWeightedKey =
+    strategy === "weighted" ? getStickyWeightedExecutionKey(combo.name, stickyWeightedLimit) : null;
+  const stickyWeightedKey =
+    rawStickyWeightedKey && weightedEligibleKeys.has(rawStickyWeightedKey)
+      ? rawStickyWeightedKey
+      : null;
+  if (strategy !== "weighted" || stickyWeightedLimit <= 1) {
+    weightedStickyTargets.delete(combo.name);
+  } else if (rawStickyWeightedKey && !stickyWeightedKey) {
+    weightedStickyTargets.delete(combo.name);
+  }
+  const weightedResolution =
     strategy === "weighted"
-      ? resolveWeightedTargets(expandedCombo, expandedAllCombos)?.orderedTargets || []
-      : resolveComboTargets(
+      ? resolveWeightedTargets(
           expandedCombo,
           expandedAllCombos,
-          clampComboDepth(config.maxComboDepth)
-        );
+          stickyWeightedKey,
+          weightedEligibleKeys,
+          stepGroups
+        )
+      : null;
+  const getWeightedStepKeyForTarget = (target: ResolvedComboTarget): string | null => {
+    if (!weightedResolution?.orderedSteps) return null;
+    const step = weightedResolution.orderedSteps.find((entry) =>
+      target.executionKey === entry.executionKey ||
+      target.executionKey.startsWith(entry.executionKey + ">")
+    );
+    return step?.executionKey || null;
+  };
+  let orderedTargets =
+    strategy === "weighted"
+      ? weightedResolution?.orderedTargets || []
+      : resolveComboTargets(expandedCombo, expandedAllCombos, clampComboDepth(config.maxComboDepth));
 
   orderedTargets = await applyRequestTagRouting(orderedTargets, body, log);
 
   if (strategy === "weighted") {
     log.info(
       "COMBO",
-      `Weighted selection${allCombos ? " with nested resolution" : ""}: ${orderedTargets.length} total targets`
+      `Weighted selection${stickyWeightedKey ? " (sticky)" : ""}${allCombos ? " with nested resolution" : ""}: ${orderedTargets.length} total targets`
     );
   } else if (allCombos) {
     log.info("COMBO", `${strategy} with nested resolution: ${orderedTargets.length} total targets`);
@@ -1575,6 +1647,12 @@ export async function handleComboChat({
             if (provider && provider !== "unknown") {
               recordProviderSuccess(provider, target.connectionId ?? undefined);
             }
+            if (strategy === "weighted" && stickyWeightedLimit > 1) {
+              const stickySuccessKey = getWeightedStepKeyForTarget(target);
+              if (stickySuccessKey) {
+                recordStickyWeightedSuccess(combo.name, stickySuccessKey, stickyWeightedLimit);
+              }
+            }
             // Webhook fan-out: best-effort, never blocks the response stream.
             notifyWebhookEvent("request.completed", {
               combo: combo.name,
@@ -2216,6 +2294,45 @@ async function handleRoundRobinCombo({
       : (settings as Record<string, unknown> | null)?.stickyRoundRobinLimit
   );
   const stickyRoundRobinEnabled = stickyLimit > 1;
+  // Exhaustion-aware sticky: if the currently sticky target is no longer
+  // available (circuit breaker OPEN, provider cooldown, model lockout, or
+  // isModelAvailable returns false), clear the sticky record so the rotation
+  // starts at the counter position instead of probing a dead target.
+  if (stickyRoundRobinEnabled) {
+    const sticky = rrStickyTargets.get(combo.name);
+    if (sticky) {
+      const stickyTarget = filteredTargets.find(
+        (target) => target.executionKey === sticky.executionKey
+      );
+      if (stickyTarget) {
+        const rawModel = parseModel(stickyTarget.modelStr).model || stickyTarget.modelStr;
+        const stickyAvailable =
+          (!stickyTarget.provider || getCircuitBreaker(stickyTarget.provider).getStatus().state !== "OPEN") &&
+          !(
+            resilienceSettings.providerCooldown.enabled &&
+            Boolean(stickyTarget.provider && stickyTarget.provider !== "unknown") &&
+            isProviderInCooldown(
+              stickyTarget.provider,
+              stickyTarget.connectionId ?? undefined,
+              resilienceSettings
+            )
+          ) &&
+          !(
+            stickyTarget.provider &&
+            rawModel &&
+            isModelLocked(stickyTarget.provider, stickyTarget.connectionId || "", rawModel)
+          ) &&
+          (isModelAvailable ? await isModelAvailable(stickyTarget.modelStr, stickyTarget) : true);
+        if (!stickyAvailable) {
+          log.info(
+            "COMBO-RR",
+            `Clearing stale sticky target ${stickyTarget.modelStr} — unavailable`
+          );
+          rrStickyTargets.delete(combo.name);
+        }
+      }
+    }
+  }
   if (
     !rrCounters.has(combo.name) &&
     !rrStickyTargets.has(combo.name) &&
