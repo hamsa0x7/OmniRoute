@@ -12,6 +12,10 @@
 
 _In development — bullets added per PR; finalized at release._
 
+### 🔒 Security
+
+- **fix(auth): only trust forwarding headers from loopback TCP peers** — `getClientIpFromRequest()` now keys requests by the unspoofable TCP peer address whenever the socket peer is a public IP, and only honors `CF-Connecting-IP` / `X-Forwarded-For` / `X-Real-IP` when the peer is a local loopback address (i.e. behind a local reverse proxy such as nginx). Prevents one direct-public client from poisoning or sharing the login-lockout / brute-force bucket of another by spoofing forwarding headers. Ported from [decolua/9router#1893](https://github.com/decolua/9router/pull/1893) — thanks @Jordannst.
+
 ### 📝 Maintenance
 
 - **chore(quality): release-green pre-flight validator + nightly signal** — new `npm run check:release-green` (`scripts/quality/validate-release-green.mjs`) reproduces the release-equivalent validation (full unit + vitest + ratchets + typecheck + lint, optional `--with-build` package-artifact) against the current working tree and classifies each red as **HARD** (real defect) vs **DRIFT** (ratchet, rebaselined at release) — purely diagnostic, never blocking contributors. A new `nightly-release-green` workflow runs it on the active release branch and opens/updates a tracking issue on hard failures. Closes the gap where the full gate (`ci.yml`) only ran on the release PR, so reds accrued silently on `release/**` and surfaced in layers at release time. (thanks @diegosouzapw)
