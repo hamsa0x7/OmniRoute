@@ -86,7 +86,10 @@ import {
 } from "../services/modelStrip.ts";
 import { resolveModelAlias } from "../services/modelDeprecation.ts";
 import { normalizeMimoThinking } from "../services/mimoThinking.ts";
-import { normalizeClaudeAdaptiveThinking } from "../services/claudeAdaptiveThinking.ts";
+import {
+  normalizeClaudeAdaptiveThinking,
+  normalizeClaudeAdaptiveUnsupported,
+} from "../services/claudeAdaptiveThinking.ts";
 import { echoModelInObject, createModelEchoTransform } from "../services/responseModelEcho.ts";
 import { stripGpt5SamplingWhenReasoning } from "../services/gpt5SamplingGuard.ts";
 import { getUnsupportedParams } from "../config/providerRegistry.ts";
@@ -2351,6 +2354,12 @@ export async function handleChatCore({
     // defaults) to `{type:"adaptive"}` — effort stays on `output_config.effort`. Keyed on
     // the resolved upstream model, so it covers every routing mode. See claudeAdaptiveThinking.ts.
     translatedBody = normalizeClaudeAdaptiveThinking(translatedBody, finalModelToUpstream);
+    // Mirror image: Haiku 4.5+ REJECTS both `thinking.type:"adaptive"` and
+    // `output_config.effort` (Sonnet/Opus-only shapes). Newer Cowork / Claude Code
+    // clients send both by default. Downgrade adaptive → `{enabled,budget:10000}`
+    // and strip `output_config.effort` so the request doesn't 400.
+    // Port from decolua/9router 401d93bd5.
+    translatedBody = normalizeClaudeAdaptiveUnsupported(translatedBody, finalModelToUpstream);
   }
 
   // Xiaomi MiMo controls reasoning ONLY via `thinking:{type:"enabled"|"disabled"}` and

@@ -1,4 +1,12 @@
-import { isAdaptiveThinkingOnly } from "@/shared/constants/modelSpecs.ts";
+import {
+  isAdaptiveThinkingOnly,
+  isAdaptiveThinkingUnsupported,
+} from "@/shared/constants/modelSpecs.ts";
+
+// Default budget used when downgrading `thinking.type:"adaptive"` to the
+// `enabled` shape for models that reject adaptive (Haiku 4.5+). Matches the
+// upstream 9router default; Claude Code's own client uses 10000 as well.
+const HAIKU_FALLBACK_THINKING_BUDGET = 10000;
 
 type JsonRecord = Record<string, unknown>;
 
@@ -49,4 +57,59 @@ export function normalizeClaudeAdaptiveThinking<T extends Record<string, unknown
   delete nextThinking.max_tokens;
 
   return { ...record, thinking: nextThinking } as T;
+}
+
+/**
+ * Downgrade `thinking.type:"adaptive"` and strip `output_config.effort` for
+ * Claude models that REJECT both shapes (Haiku 4.5+). Mirror image of
+ * `normalizeClaudeAdaptiveThinking` — for these models the Messages API
+ * returns HTTP 400 on adaptive or on any `output_config.effort`. Newer
+ * Cowork / Claude Code clients emit both by default; this is the final
+ * provider-agnostic guard keyed on the resolved target model.
+ *
+ * Transforms applied when active:
+ *   - `thinking.type:"adaptive"` →
+ *     `{ type: "enabled", budget_tokens: ${HAIKU_FALLBACK_THINKING_BUDGET} }`
+ *   - `output_config.effort` is deleted; `output_config` itself is removed
+ *     when that leaves the object empty.
+ *
+ * No-op (returns the same reference) when the model is not Haiku-class, or
+ * when neither shape is present.
+ *
+ * Port of decolua/9router 401d93bd5.
+ */
+export function normalizeClaudeAdaptiveUnsupported<T extends Record<string, unknown>>(
+  body: T,
+  model: string | null | undefined
+): T {
+  if (!isAdaptiveThinkingUnsupported(model)) return body;
+  const record = asRecord(body);
+  if (!record) return body;
+
+  const thinking = asRecord(record.thinking);
+  const isAdaptive = thinking?.type === "adaptive";
+  const outputConfig = asRecord(record.output_config);
+  const hasEffort = outputConfig !== null && "effort" in outputConfig;
+  if (!isAdaptive && !hasEffort) return body;
+
+  const next: JsonRecord = { ...record };
+
+  if (isAdaptive && thinking) {
+    const nextThinking: JsonRecord = { ...thinking };
+    nextThinking.type = "enabled";
+    nextThinking.budget_tokens = HAIKU_FALLBACK_THINKING_BUDGET;
+    next.thinking = nextThinking;
+  }
+
+  if (hasEffort && outputConfig) {
+    const nextOutputConfig: JsonRecord = { ...outputConfig };
+    delete nextOutputConfig.effort;
+    if (Object.keys(nextOutputConfig).length === 0) {
+      delete next.output_config;
+    } else {
+      next.output_config = nextOutputConfig;
+    }
+  }
+
+  return next as T;
 }

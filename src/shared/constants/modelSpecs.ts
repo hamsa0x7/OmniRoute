@@ -30,6 +30,13 @@ export interface ModelSpec {
   // Claude-family thinking-capable models that honor `disabled`. Set `true` to force the
   // variant on for any other model, or `false` to suppress it. See open-sse/utils/noThinkingAlias.ts.
   noThinkingAlias?: boolean;
+  // Model REJECTS adaptive thinking AND `output_config.effort`. Only Sonnet/Opus
+  // support those shapes — Haiku 4.5+ returns 400 on `thinking.type:"adaptive"`
+  // or any `output_config.effort`. Newer Cowork/Claude Code clients send both
+  // by default, so the request flow must downgrade them (adaptive →
+  // `{type:"enabled", budget_tokens:10000}`, output_config.effort stripped)
+  // before dispatch. Port from decolua/9router 401d93bd5.
+  adaptiveThinkingUnsupported?: boolean;
 }
 
 const BEDROCK_CLAUDE_ALIASES = (...modelIds: string[]) => [
@@ -279,6 +286,11 @@ export const MODEL_SPECS: Record<string, ModelSpec> = {
     supportsThinking: true,
     supportsTools: true,
     supportsVision: true,
+    // Haiku 4.5 rejects `thinking.type:"adaptive"` and `output_config.effort`
+    // with HTTP 400 — those shapes are Sonnet/Opus-only. Cowork/Claude Code
+    // send them by default, so OmniRoute downgrades them before dispatch.
+    // See open-sse/services/claudeAdaptiveThinking.ts::normalizeClaudeAdaptiveUnsupported.
+    adaptiveThinkingUnsupported: true,
     aliases: ["claude-haiku-4.5"],
   },
 
@@ -535,6 +547,18 @@ export function getDefaultThinkingBudget(modelId: string): number {
 export function isAdaptiveThinkingOnly(modelId: string | null | undefined): boolean {
   if (typeof modelId !== "string" || modelId.length === 0) return false;
   return getModelSpec(modelId)?.adaptiveThinkingOnly === true;
+}
+
+/**
+ * True when the resolved model REJECTS both `thinking.type:"adaptive"` and
+ * `output_config.effort`. Only Sonnet/Opus support those shapes — Haiku 4.5+
+ * returns 400. Used to downgrade adaptive thinking → `enabled+budget` and to
+ * strip `output_config.effort` before dispatch (mirror image of
+ * `isAdaptiveThinkingOnly`). See claudeAdaptiveThinking.ts.
+ */
+export function isAdaptiveThinkingUnsupported(modelId: string | null | undefined): boolean {
+  if (typeof modelId !== "string" || modelId.length === 0) return false;
+  return getModelSpec(modelId)?.adaptiveThinkingUnsupported === true;
 }
 
 export function capThinkingBudget(modelId: string, budget: number): number {
