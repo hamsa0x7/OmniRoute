@@ -170,7 +170,9 @@ export function filterToOpenAIFormat(body) {
             type: "function",
             function: {
               name: tool.name,
-              description: tool.description || "",
+              // Coerce: strict upstream validators (NVIDIA NIM, Codex) reject
+              // non-string descriptions. Ports decolua/9router#397.
+              description: String(tool.description ?? ""),
               parameters: tool.input_schema || { type: "object", properties: {} },
             },
           };
@@ -182,7 +184,7 @@ export function filterToOpenAIFormat(body) {
             type: "function",
             function: {
               name: fn.name,
-              description: fn.description || "",
+              description: String(fn.description ?? ""),
               parameters: fn.parameters || { type: "object", properties: {} },
             },
           }));
