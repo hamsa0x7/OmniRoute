@@ -262,6 +262,28 @@ export const GITLAB_DUO_CONFIG = {
   codeChallengeMethod: "S256",
 };
 
+// AWS region allowlist pattern — used to validate any region value that gets
+// interpolated into an upstream URL like `https://oidc.${region}.amazonaws.com/...`
+// before fetch. Without this guard, an attacker-controlled region (Kiro auto-import
+// params, providerSpecificData on credential update) could pivot the outbound
+// request to an arbitrary host via URL delimiters (GHSA-6mwv-4mrm-5p3m).
+// Matches canonical AWS region tokens: `us-east-1`, `eu-central-1`,
+// `ap-southeast-2`, …. Two lowercase letters, a dash, one or more lowercase
+// letters (e.g. `northeast`, `southeast`), a dash, and a 1–2-digit cluster.
+export const AWS_REGION_PATTERN = /^[a-z]{2}-[a-z]+-\d{1,2}$/;
+
+/**
+ * Reject any region value that does not match the strict AWS region shape
+ * BEFORE interpolating it into an upstream URL. Throws synchronously so
+ * malformed regions never reach `fetch()`.
+ */
+export function assertValidAwsRegion(region: unknown): string {
+  if (typeof region !== "string" || !AWS_REGION_PATTERN.test(region)) {
+    throw new Error("Invalid region");
+  }
+  return region;
+}
+
 // Kiro OAuth Configuration
 // Supports multiple auth methods:
 // 1. AWS Builder ID (Device Code Flow)
