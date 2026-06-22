@@ -15,16 +15,19 @@ import { saveCliToolLastConfigured, deleteCliToolLastConfigured } from "@/lib/db
 import { cliSettingsEnvSchema } from "@/shared/validation/schemas";
 import { isValidationFailure, validateBody } from "@/shared/validation/helpers";
 import { getApiKeyById } from "@/lib/localDb";
+import { parseJsoncTolerantly } from "@/lib/cli-helper/jsoncSettings";
 
 // Get claude settings path based on OS
 const getClaudeSettingsPath = () => getCliPrimaryConfigPath("claude");
 
-// Read current settings
+// Read current settings. Tolerates JSONC (// or /* */ comments and trailing
+// commas) so a CLI tool whose settings file is JSONC doesn't surface as
+// "not installed" in the UI (port from decolua/9router 6c10edf8).
 const readSettings = async () => {
   try {
     const settingsPath = getClaudeSettingsPath();
     const content = await fs.readFile(settingsPath, "utf-8");
-    return JSON.parse(content);
+    return parseJsoncTolerantly(content);
   } catch (error: any) {
     if (error.code === "ENOENT") {
       return null;

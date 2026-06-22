@@ -14,16 +14,19 @@ import { saveCliToolLastConfigured, deleteCliToolLastConfigured } from "@/lib/db
 import { cliModelConfigSchema } from "@/shared/validation/schemas";
 import { isValidationFailure, validateBody } from "@/shared/validation/helpers";
 import { resolveApiKey } from "@/shared/services/apiKeyResolver";
+import { parseJsoncTolerantly } from "@/lib/cli-helper/jsoncSettings";
 
 const getOpenClawSettingsPath = () => getCliPrimaryConfigPath("openclaw");
 const getOpenClawDir = () => path.dirname(getOpenClawSettingsPath());
 
-// Read current settings.json
+// Read current settings.json — tolerates JSONC; unparseable → null so the
+// UI doesn't misrender a real install as "tool not installed".
+// Port from decolua/9router 6c10edf8.
 const readSettings = async () => {
   try {
     const settingsPath = getOpenClawSettingsPath();
     const content = await fs.readFile(settingsPath, "utf-8");
-    return JSON.parse(content);
+    return parseJsoncTolerantly(content);
   } catch (error: any) {
     if (error.code === "ENOENT") return null;
     throw error;

@@ -11,16 +11,19 @@ import { saveCliToolLastConfigured, deleteCliToolLastConfigured } from "@/lib/db
 import { cliModelConfigSchema } from "@/shared/validation/schemas";
 import { isValidationFailure, validateBody } from "@/shared/validation/helpers";
 import { resolveApiKey } from "@/shared/services/apiKeyResolver";
+import { parseJsoncTolerantly } from "@/lib/cli-helper/jsoncSettings";
 
 const KILO_DATA_DIR = path.join(os.homedir(), ".local", "share", "kilo");
 const AUTH_PATH = path.join(KILO_DATA_DIR, "auth.json");
 const KILO_CONFIG_DIR = path.join(os.homedir(), ".config", "kilo");
 
-// Read auth.json
+// Read auth.json — tolerates JSONC; unparseable → null so the UI doesn't
+// misrender a real install as "tool not installed".
+// Port from decolua/9router 6c10edf8.
 const readAuth = async () => {
   try {
     const content = await fs.readFile(AUTH_PATH, "utf-8");
-    return JSON.parse(content);
+    return parseJsoncTolerantly(content);
   } catch (error) {
     if (error.code === "ENOENT") return null;
     throw error;

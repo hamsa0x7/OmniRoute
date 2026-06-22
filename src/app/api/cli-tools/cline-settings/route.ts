@@ -11,16 +11,19 @@ import { saveCliToolLastConfigured, deleteCliToolLastConfigured } from "@/lib/db
 import { cliModelConfigSchema } from "@/shared/validation/schemas";
 import { isValidationFailure, validateBody } from "@/shared/validation/helpers";
 import { resolveApiKey } from "@/shared/services/apiKeyResolver";
+import { parseJsoncTolerantly } from "@/lib/cli-helper/jsoncSettings";
 
 const CLINE_DATA_DIR = path.join(os.homedir(), ".cline", "data");
 const GLOBAL_STATE_PATH = path.join(CLINE_DATA_DIR, "globalState.json");
 const SECRETS_PATH = path.join(CLINE_DATA_DIR, "secrets.json");
 
-// Read globalState.json
+// Read globalState.json — tolerates JSONC; unparseable → null (treated as
+// "no config" so the UI doesn't misrender it as "tool not installed").
+// Port from decolua/9router 6c10edf8.
 const readGlobalState = async () => {
   try {
     const content = await fs.readFile(GLOBAL_STATE_PATH, "utf-8");
-    return JSON.parse(content);
+    return parseJsoncTolerantly(content);
   } catch (error: any) {
     if (error.code === "ENOENT") return null;
     throw error;
@@ -31,7 +34,7 @@ const readGlobalState = async () => {
 const readSecrets = async () => {
   try {
     const content = await fs.readFile(SECRETS_PATH, "utf-8");
-    return JSON.parse(content);
+    return parseJsoncTolerantly(content) ?? {};
   } catch (error: any) {
     if (error.code === "ENOENT") return {};
     throw error;
