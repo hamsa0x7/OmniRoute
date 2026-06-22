@@ -12,6 +12,10 @@
 
 _In development — bullets added per PR; finalized at release._
 
+### 🐛 Fixes
+
+- **fix(codex): treat any 401 from OpenAI's OAuth token endpoint as unrecoverable** — `refreshCodexToken()` already classified `token_expired` / `invalid_token` / `refresh_token_reused` / `invalid_grant` as unrecoverable, but a 401 carrying a payload variant we did not yet recognize (e.g. only the bare `"Could not validate your token. Please try signing in again."` message) slipped through and returned `null`, which triggered the retryable-failure branch — a refresh loop that cannot succeed against a dead refresh token. Now any 401 from the OAuth token endpoint surfaces `unrecoverable_refresh_error` so HealthCheck deactivates the account and the user is prompted to re-authenticate. 429 / 5xx remain transient. Defense-in-depth — does not change behavior for the existing markers. (port from upstream PR [decolua/9router#1821](https://github.com/decolua/9router/pull/1821), thanks @sacwooky)
+
 ### 📝 Maintenance
 
 - **chore(quality): release-green pre-flight validator + nightly signal** — new `npm run check:release-green` (`scripts/quality/validate-release-green.mjs`) reproduces the release-equivalent validation (full unit + vitest + ratchets + typecheck + lint, optional `--with-build` package-artifact) against the current working tree and classifies each red as **HARD** (real defect) vs **DRIFT** (ratchet, rebaselined at release) — purely diagnostic, never blocking contributors. A new `nightly-release-green` workflow runs it on the active release branch and opens/updates a tracking issue on hard failures. Closes the gap where the full gate (`ci.yml`) only ran on the release PR, so reds accrued silently on `release/**` and surfaced in layers at release time. (thanks @diegosouzapw)
