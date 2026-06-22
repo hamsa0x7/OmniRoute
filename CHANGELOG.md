@@ -8,6 +8,10 @@
 
 _In development — bullets added per PR; finalized at release._
 
+### 🐛 Bug Fixes
+
+- **fix(translator): preserve `reasoning_effort` across Responses ↔ Chat hop for all clients** — `reasoning.effort` from Responses-API clients is now promoted to the OpenAI-native `reasoning_effort` on the Chat-Completions side unconditionally (previously the promotion was Copilot-only, so OpenCode / Cursor / raw Responses clients silently lost the hint). The Copilot-specific `summary` → Claude summarized-thinking marker stays behind its existing UA gate. Ported from upstream PR [decolua/9router#1817](https://github.com/decolua/9router/pull/1817) — thanks @ryanngit.
+
 ### 📝 Maintenance
 
 - **chore(quality): release-green pre-flight validator + nightly signal** — new `npm run check:release-green` (`scripts/quality/validate-release-green.mjs`) reproduces the release-equivalent validation (full unit + vitest + ratchets + typecheck + lint, optional `--with-build` package-artifact) against the current working tree and classifies each red as **HARD** (real defect) vs **DRIFT** (ratchet, rebaselined at release) — purely diagnostic, never blocking contributors. A new `nightly-release-green` workflow runs it on the active release branch and opens/updates a tracking issue on hard failures. Closes the gap where the full gate (`ci.yml`) only ran on the release PR, so reds accrued silently on `release/**` and surfaced in layers at release time. (thanks @diegosouzapw)
