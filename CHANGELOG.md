@@ -15,6 +15,7 @@ _In development — bullets added per PR; finalized at release._
 - **deepseek-web**: fold `role:"tool"` results into the single-prompt transcript (`messagesToPrompt`) so tool outputs reach the model instead of being silently dropped when a follow-up turn omits the `tools[]` array (#4712).
 - **Dashboard**: remove the dead, unconditional `useLiveRequests()` call from `HomePageClient.tsx` — it crashed the `/home` page in production builds with `ReferenceError: useLiveRequests is not defined` (#4759, #4745) and opened the live-dashboard WebSocket even when Provider Topology was hidden (#4596). The live feed remains owned by the settings-gated `HomeProviderTopologySection`.
 - **Providers dashboard**: dedupe provider nodes by id when adding a compatible provider (`upsertProviderNodeById`) so the same provider can no longer appear twice and no-op adds don't invalidate the compatible-provider memo (#4746).
+- **Dashboard**: keep the desktop sidebar visible by replacing the fragile `hidden`/`lg:flex` Tailwind cascade with an explicit `.dashboard-sidebar-desktop` class backed by a 1024px media query, so class ordering/specificity can no longer collapse the sidebar on desktop. (thanks @Delcado19)
 
 ---
 
