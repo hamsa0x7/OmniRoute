@@ -77,6 +77,30 @@ function applyCustomHeaders(headers: Record<string, string>, rawCustomHeaders: u
   }
 }
 
+/**
+ * Set `name` on `headers` to a single canonical value, collapsing any
+ * case-insensitive duplicates (e.g. a `Anthropic-Version` already present from
+ * `this.config.headers` alongside the lowercase `anthropic-version` we set).
+ * Without this, claude/anthropic-compatible upstreams receive two
+ * `anthropic-version` headers. Falls back to `fallbackValue` when none exists.
+ */
+function ensureSingleHeader(
+  headers: Record<string, string>,
+  name: string,
+  fallbackValue: string
+): void {
+  const lowerName = name.toLowerCase();
+  let value: string | undefined = headers[name];
+
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() !== lowerName) continue;
+    if (value === undefined) value = headers[key];
+    if (key !== name) delete headers[key];
+  }
+
+  headers[name] = value ?? fallbackValue;
+}
+
 function normalizeBaseUrl(baseUrl) {
   return (baseUrl || "").trim().replace(/\/$/, "");
 }
@@ -468,9 +492,7 @@ export class DefaultExecutor extends BaseExecutor {
           } else if (credentials.accessToken) {
             headers["Authorization"] = `Bearer ${credentials.accessToken}`;
           }
-          if (!headers["anthropic-version"]) {
-            headers["anthropic-version"] = "2023-06-01";
-          }
+          ensureSingleHeader(headers, "anthropic-version", "2023-06-01");
         } else {
           // Use registry authHeader if available, otherwise default to bearer
           const entry = getRegistryEntry(this.provider);
