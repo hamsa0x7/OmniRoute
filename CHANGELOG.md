@@ -18,6 +18,7 @@ _In development — bullets added per PR; finalized at release._
 
 ### 🐛 Fixed
 
+- **fix(routing): reserved built-in provider prefixes can't be shadowed by user-defined provider-node prefixes** — a user-added OpenAI-compatible or Anthropic-compatible node with `prefix=cf` (or any other built-in id/alias) no longer hijacks routes like `cf/@cf/...` away from the real Cloudflare AI provider. Internal node-UUID lookups (combo-step targets) keep working. (thanks @lowkruc)
 - **fix(db): scheduled cleanup actually runs + queries target the real tables (DB-bloat / OOM)** — `runAutoCleanup` was never scheduled, so retention cleanup never executed and tables (`compression_analytics`, `usage_history`, …) grew unbounded into multi-GB SQLite files driving high RSS. Worse, several cleanup queries referenced wrong table/column names (`call_logs.created_at`→`timestamp`, `compression_analytics.created_at`→`timestamp`, `mcp_audit_log`→`mcp_tool_audit`, `a2a_events`→`a2a_task_events`, `memory_entries`→`memories`), so even a manual run silently no-op'd or errored. Fixed the five queries to match the real schema, added `cleanupProxyLogs`, and wired a `startCleanupScheduler` (startup + every 6h, VACUUM after deletes) into `server-init` alongside the existing budget-reset and reasoning-cache jobs. ([#4428](https://github.com/diegosouzapw/OmniRoute/pull/4428) — thanks @oyi77)
 
 ---

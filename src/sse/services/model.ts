@@ -7,8 +7,49 @@ import {
   resolveModelAliasFromMap,
   getModelInfoCore,
 } from "@omniroute/open-sse/services/model.ts";
+import { REGISTRY } from "@omniroute/open-sse/config/providers/index.ts";
 
 export { parseModel };
+
+/**
+ * Built-in provider ids/aliases that user-defined provider-node prefixes must
+ * not be allowed to shadow (e.g. a custom OpenAI-compatible node with
+ * `prefix=cf` would otherwise hijack `cf/...` routes away from Cloudflare).
+ *
+ * Built lazily once from the static registry — REGISTRY is initialized at
+ * module-load time, so this Set is stable for the process lifetime.
+ *
+ * Exported for unit testing.
+ */
+export const RESERVED_PROVIDER_PREFIXES: ReadonlySet<string> = (() => {
+  const reserved = new Set<string>();
+  for (const entry of Object.values(REGISTRY)) {
+    if (entry.id) reserved.add(entry.id);
+    if (entry.alias) reserved.add(entry.alias);
+  }
+  return reserved;
+})();
+
+/**
+ * Pure helper: pick the matching provider-node for a given route prefix.
+ *
+ * A node matches when:
+ *  - its internal UUID id equals the prefix (combo-step internal IDs, #2778), OR
+ *  - its user-defined `prefix` equals the prefix AND the prefix is NOT a
+ *    reserved built-in provider id/alias (shadowing guard, upstream 047fdc89).
+ *
+ * Exported for direct unit testing without spinning up the DB layer.
+ */
+export function selectProviderNodeForPrefix<T extends { id?: string; prefix?: string }>(
+  prefix: string,
+  nodes: T[],
+  reserved: ReadonlySet<string> = RESERVED_PROVIDER_PREFIXES
+): T | undefined {
+  const isReserved = reserved.has(prefix);
+  return nodes.find(
+    (node) => (!isReserved && node.prefix === prefix) || node.id === prefix
+  );
+}
 
 /**
  * Build a combined model alias map that merges both alias stores:
@@ -98,14 +139,17 @@ export async function getModelInfo(modelStr) {
     // Ensure prefixToCheck is always a concise identifier, not a full model string
     const prefixToCheck = parsed.providerAlias || parsed.provider;
 
-    // Check OpenAI Compatible nodes
-    // Match by node.prefix (user-defined alias) OR node.id (internal UUID id stored by
-    // combo steps), so that combo targets using the internal node id still resolve
-    // correctly (#2778).
+    // Provider-node prefixes are user-defined. They must not override built-in
+    // provider ids/aliases like `cf`, `cloudflare-ai`, `openai`, `anthropic`, etc.
+    // Without this guard, a custom OpenAI-compatible node with `prefix=cf` would
+    // hijack `cf/@cf/...` routes away from Cloudflare AI (upstream 047fdc89).
+    // Internal node UUIDs are still honored via the `id === prefix` branch in
+    // selectProviderNodeForPrefix.
+
+    // Check OpenAI Compatible nodes — selectProviderNodeForPrefix applies the
+    // reserved-prefix guard while keeping internal-UUID (#2778) lookups live.
     const openaiNodes = await getProviderNodes({ type: "openai-compatible" });
-    const matchedOpenAI = openaiNodes.find(
-      (node) => node.prefix === prefixToCheck || node.id === prefixToCheck
-    );
+    const matchedOpenAI = selectProviderNodeForPrefix(prefixToCheck as string, openaiNodes);
     if (matchedOpenAI) {
       const { apiFormat, targetFormat } = await lookupCustomModelMeta(
         matchedOpenAI.id as string,
@@ -120,10 +164,11 @@ export async function getModelInfo(modelStr) {
       };
     }
 
-    // Check Anthropic Compatible nodes
+    // Check Anthropic Compatible nodes — same reserved-prefix guard.
     const anthropicNodes = await getProviderNodes({ type: "anthropic-compatible" });
-    const matchedAnthropic = anthropicNodes.find(
-      (node) => node.prefix === prefixToCheck || node.id === prefixToCheck
+    const matchedAnthropic = selectProviderNodeForPrefix(
+      prefixToCheck as string,
+      anthropicNodes
     );
     if (matchedAnthropic) {
       const { apiFormat, targetFormat } = await lookupCustomModelMeta(
