@@ -21,6 +21,7 @@
 - **Storage VACUUM**: the scheduled VACUUM job now follows the Storage page settings (`scheduledVacuum` / `vacuumHour`) as the single source of truth; the legacy env-flag control path was removed ([#4726](https://github.com/diegosouzapw/OmniRoute/pull/4726) — thanks @rdself).
 - **Tiers**: no-auth providers are now counted as free, and the free-tier filter returns an empty set instead of falling through to every provider ([#4753](https://github.com/diegosouzapw/OmniRoute/pull/4753) — thanks @megamen32 / @diegosouzapw).
 - **Combos**: auto-promote `zeroLatencyOptimizationsEnabled` so legacy configs (pre-3.8.33 `fallbackCompressionMode="lite"`) round-trip cleanly on the first GUI edit ([#4774](https://github.com/diegosouzapw/OmniRoute/pull/4774) — thanks @KooshaPari / @diegosouzapw).
+- **translator (OpenAI→Claude)**: strip `temperature` for Claude models with extended thinking — the Messages API rejects `temperature` when thinking is active, so the translator now drops it for the forced-thinking `claude-opus-4.x` / `claude-sonnet-4.x` families (used by Claude OAuth) and whenever `thinking` / `reasoning_effort` enables thinking; non-thinking models (haiku, older sonnets) keep `temperature` (thanks @noestelar).
 
 ### 📝 Maintenance
 
