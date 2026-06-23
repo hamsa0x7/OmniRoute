@@ -13,6 +13,7 @@
 
 ### 🔧 Bug Fixes
 
+- **sse**: strip reasoning blobs from agentic context to prevent O(n²) token growth — the Codex Responses `input` sanitizer now drops `type:"reasoning"` items (encrypted_content is unusable with `store=false`) and `filterToOpenAIFormat` strips `reasoning_content` from assistant + `tool_calls` messages, so reasoning summaries no longer accumulate and inflate every subsequent turn (thanks @GodrezJr2).
 - **db-backups**: make the database-import size cap configurable via `OMNIROUTE_DB_IMPORT_MAX_MB` (default 100 MB, 4 GB ceiling) so backups larger than 100 MB can be restored; error message now points to the env var and to VACUUM ([#4757](https://github.com/diegosouzapw/OmniRoute/pull/4757) — closes #4719, thanks @diegosouzapw).
 - **Onboarding**: add the missing `onboarding.tiers` step-title translation so the setup wizard no longer crashes with `MISSING_MESSAGE: onboarding.tiers` ([#4755](https://github.com/diegosouzapw/OmniRoute/pull/4755) — closes #4698, thanks @diegosouzapw).
 - **deepseek-web**: fold `role:"tool"` results into the single-prompt transcript (`messagesToPrompt`) so tool outputs reach the model instead of being silently dropped when a follow-up turn omits the `tools[]` array ([#4756](https://github.com/diegosouzapw/OmniRoute/pull/4756) — closes #4712, thanks @diegosouzapw).
