@@ -15,6 +15,7 @@ _In development — bullets added per PR; finalized at release._
 - **deepseek-web**: fold `role:"tool"` results into the single-prompt transcript (`messagesToPrompt`) so tool outputs reach the model instead of being silently dropped when a follow-up turn omits the `tools[]` array (#4712).
 - **Dashboard**: remove the dead, unconditional `useLiveRequests()` call from `HomePageClient.tsx` — it crashed the `/home` page in production builds with `ReferenceError: useLiveRequests is not defined` (#4759, #4745) and opened the live-dashboard WebSocket even when Provider Topology was hidden (#4596). The live feed remains owned by the settings-gated `HomeProviderTopologySection`.
 - **Providers dashboard**: dedupe provider nodes by id when adding a compatible provider (`upsertProviderNodeById`) so the same provider can no longer appear twice and no-op adds don't invalidate the compatible-provider memo (#4746).
+- **huggingface**: validate API tokens via the `whoami-v2` endpoint as a pure auth probe so fine-grained Inference-Provider tokens (valid even when model/task endpoints reject them) are no longer falsely marked invalid; only 401/403 means an invalid key, other non-OK statuses surface as transient upstream errors. (thanks @Delcado19)
 
 ---
 
