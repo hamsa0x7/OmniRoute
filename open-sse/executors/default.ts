@@ -23,6 +23,7 @@ import {
   isClaudeCodeCompatible,
 } from "../services/provider.ts";
 import { sanitizeQwenThinkingToolChoice } from "../services/qwenThinking.ts";
+import { injectJsonSchemaFallback } from "../utils/jsonSchemaInjector.ts";
 import { buildDataRobotChatUrl } from "../config/datarobot.ts";
 import { buildAzureAiChatUrl } from "../config/azureAi.ts";
 import { buildWatsonxChatUrl } from "../config/watsonx.ts";
@@ -642,6 +643,23 @@ export class DefaultExecutor extends BaseExecutor {
           };
         }
       }
+    }
+
+    // Port of decolua/9router#1387 (closes upstream #1343): OpenAI-compatible
+    // providers that only support `response_format: { type: "json_object" }`
+    // reject `json_schema` structured-output requests. Inject the schema into the
+    // system prompt and downgrade `response_format` to `json_object` — mirroring
+    // the openai-to-claude translator. Scoped to the plain openai chat-completions
+    // path (the openai-responses transformer carries its own structured-output
+    // handling).
+    if (
+      targetFormat === "openai" &&
+      requestFormat !== "openai-responses" &&
+      typeof withDefaults === "object" &&
+      withDefaults !== null &&
+      !Array.isArray(withDefaults)
+    ) {
+      withDefaults = injectJsonSchemaFallback(withDefaults as Record<string, unknown>);
     }
 
     if (this.provider === "qwen" && typeof withDefaults === "object" && withDefaults !== null) {
