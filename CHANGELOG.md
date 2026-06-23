@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### 🐛 Bug Fixes
+
+- **fix(config): sync the full SiliconFlow model catalog** — the static SiliconFlow registry listed only 10 model IDs; it now carries the complete provider catalog (GLM 5.x, Kimi K2.6, Qwen 3.5/3.6, MiniMax M2.x, Hunyuan, Gemma 4, Ling/Ring, Seed-OSS, and more), so newly released SiliconFlow models resolve without manual edits. (thanks @letanphuc)
+
 ---
 
 ## [3.8.35] — 2026-06-23
