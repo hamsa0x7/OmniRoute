@@ -21,6 +21,7 @@
 - **Storage VACUUM**: the scheduled VACUUM job now follows the Storage page settings (`scheduledVacuum` / `vacuumHour`) as the single source of truth; the legacy env-flag control path was removed ([#4726](https://github.com/diegosouzapw/OmniRoute/pull/4726) — thanks @rdself).
 - **Tiers**: no-auth providers are now counted as free, and the free-tier filter returns an empty set instead of falling through to every provider ([#4753](https://github.com/diegosouzapw/OmniRoute/pull/4753) — thanks @megamen32 / @diegosouzapw).
 - **Combos**: auto-promote `zeroLatencyOptimizationsEnabled` so legacy configs (pre-3.8.33 `fallbackCompressionMode="lite"`) round-trip cleanly on the first GUI edit ([#4774](https://github.com/diegosouzapw/OmniRoute/pull/4774) — thanks @KooshaPari / @diegosouzapw).
+- **Resilience (Codex WS)**: a local WS→SSE bridge `Invalid state: Controller is already closed` throw no longer trips the whole-provider circuit breaker. The bare throw defaulted to HTTP 502 (a provider-failure code), so a burst on the WebSocket Responses path opened the Codex provider breaker and 503'd every subsequent request — including the healthy HTTP/SSE path. The provider breaker now excludes this local stream-lifecycle error via its `isFailure` guard ([#4870](https://github.com/diegosouzapw/OmniRoute/pull/4870) — refs #4602, thanks @jeffer1312 / @huohua-dev).
 
 ### 📝 Maintenance
 
