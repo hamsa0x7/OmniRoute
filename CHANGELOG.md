@@ -15,6 +15,7 @@
 - **feat(quota): quota scraping for OpenCode Go and Ollama Cloud** — surfaces quota windows for the OpenCode Go and Ollama Cloud providers. ([#4642](https://github.com/diegosouzapw/OmniRoute/pull/4642) — thanks @JxnLexn)
 - **feat(settings): expose stream recovery feature flags** — surfaces the stream-recovery toggles in settings. ([#4586](https://github.com/diegosouzapw/OmniRoute/pull/4586) — thanks @rdself)
 - **feat(providers): optional model ID for custom API-key validation** — custom API-key connection tests can now specify the model ID used to validate the key. ([#4555](https://github.com/diegosouzapw/OmniRoute/pull/4555) — thanks @diegosouzapw)
+- **feat(sse): add GPT-4 to the GitHub Copilot (`gh`) provider** — registers the original `gpt-4` chat/completions model on the GitHub Copilot provider alongside `gpt-4o` and the GPT-5.x family, so apps that hard-code `gpt-4` resolve against the `gh` alias. (thanks @decolua)
 
 ### 🐛 Fixed
 
