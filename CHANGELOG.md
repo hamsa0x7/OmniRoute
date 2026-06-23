@@ -21,6 +21,7 @@
 - **Storage VACUUM**: the scheduled VACUUM job now follows the Storage page settings (`scheduledVacuum` / `vacuumHour`) as the single source of truth; the legacy env-flag control path was removed ([#4726](https://github.com/diegosouzapw/OmniRoute/pull/4726) — thanks @rdself).
 - **Tiers**: no-auth providers are now counted as free, and the free-tier filter returns an empty set instead of falling through to every provider ([#4753](https://github.com/diegosouzapw/OmniRoute/pull/4753) — thanks @megamen32 / @diegosouzapw).
 - **Combos**: auto-promote `zeroLatencyOptimizationsEnabled` so legacy configs (pre-3.8.33 `fallbackCompressionMode="lite"`) round-trip cleanly on the first GUI edit ([#4774](https://github.com/diegosouzapw/OmniRoute/pull/4774) — thanks @KooshaPari / @diegosouzapw).
+- **Responses API**: close the reasoning item before emitting message content and route the message to a separate `output_index` when reasoning was emitted via the native `delta.reasoning_content` field, so reasoning-then-text streams are no longer protocol-invalid (the reasoning item is now properly closed and the message no longer reuses the reasoning item's index) in both the Responses transformer and the OpenAI→Responses translator (thanks @kwanLeeFrmVi).
 
 ### 📝 Maintenance
 
