@@ -2555,15 +2555,45 @@ async function getAntigravitySubscriptionInfo(
 }
 
 /**
- * Claude Usage - Try to fetch from Anthropic API
+ * OAuth usage endpoint rate-limits aggressively (429); we cool down per-token for
+ * a few minutes after a 429 to stop the dashboard from hammering it. Only the
+ * quota endpoint is gated — chat with the same token is unaffected.
  */
-async function getClaudeUsage(accessToken?: string) {
+const CLAUDE_OAUTH_USAGE_429_COOLDOWN_MS = 180_000;
+const claudeOAuthUsageCooldown = new Map<string, number>();
+
+/** Test-only escape hatch to clear the cooldown between TDD assertions. */
+export function _resetClaudeOAuthUsageCooldownForTests() {
+  claudeOAuthUsageCooldown.clear();
+}
+
+/** Test-only accessor to inspect cooldown state without exporting the Map. */
+export function _peekClaudeOAuthUsageCooldownForTests(accessToken: string): number | undefined {
+  return claudeOAuthUsageCooldown.get(accessToken);
+}
+
+/**
+ * Claude Usage - Try to fetch from Anthropic API
+ *
+ * Exported so the OAuth-usage 429 cooldown can be exercised in unit tests; the
+ * dashboard path still goes through `getUsageForProvider` (case `"claude"`).
+ */
+export async function getClaudeUsage(accessToken?: string) {
   if (!accessToken) {
     return { message: "Claude connected. Access token not available.", bootstrap: null };
   }
 
   // Refresh bootstrap in parallel; best-effort, failure non-fatal.
   const bootstrapPromise = fetchClaudeBootstrap(accessToken).catch(() => null);
+
+  // Skip the OAuth usage call while this token is cooling down from a recent 429:
+  // go straight to the legacy fallback so the dashboard still gets *something*.
+  const cooldownUntil = claudeOAuthUsageCooldown.get(accessToken);
+  if (cooldownUntil && Date.now() < cooldownUntil) {
+    const legacy = await getClaudeUsageLegacy(accessToken);
+    return { ...legacy, bootstrap: await bootstrapPromise };
+  }
+
   try {
     // Real CLI uses axios here, not Stainless — UA is `claude-code/<version>`
     // (not `claude-cli/...`) and the shape is simpler than /v1/messages.
@@ -2647,6 +2677,16 @@ async function getClaudeUsage(accessToken?: string) {
         extraUsage: data.extra_usage ?? null,
         bootstrap,
       };
+    }
+
+    // Cool down OAuth usage polling after a 429 so we stop hammering the quota
+    // endpoint. Only the quota endpoint is gated; chat with the same token still
+    // works because it doesn't read this Map.
+    if (oauthResponse.status === 429) {
+      claudeOAuthUsageCooldown.set(
+        accessToken,
+        Date.now() + CLAUDE_OAUTH_USAGE_429_COOLDOWN_MS
+      );
     }
 
     // Fallback: OAuth endpoint returned non-OK, try legacy settings/org endpoint

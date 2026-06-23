@@ -18,6 +18,7 @@ _In development — bullets added per PR; finalized at release._
 
 ### 🐛 Fixed
 
+- **fix(usage): cool down Claude OAuth `/api/oauth/usage` after a 429 to stop dashboard 429 spam** — when the OAuth usage endpoint rate-limits, the next 3 minutes of polls for that token skip the OAuth probe and go straight to the legacy fallback. Only the quota endpoint is gated — chat with the same token is unaffected. (thanks @decolua)
 - **fix(db): scheduled cleanup actually runs + queries target the real tables (DB-bloat / OOM)** — `runAutoCleanup` was never scheduled, so retention cleanup never executed and tables (`compression_analytics`, `usage_history`, …) grew unbounded into multi-GB SQLite files driving high RSS. Worse, several cleanup queries referenced wrong table/column names (`call_logs.created_at`→`timestamp`, `compression_analytics.created_at`→`timestamp`, `mcp_audit_log`→`mcp_tool_audit`, `a2a_events`→`a2a_task_events`, `memory_entries`→`memories`), so even a manual run silently no-op'd or errored. Fixed the five queries to match the real schema, added `cleanupProxyLogs`, and wired a `startCleanupScheduler` (startup + every 6h, VACUUM after deletes) into `server-init` alongside the existing budget-reset and reasoning-cache jobs. ([#4428](https://github.com/diegosouzapw/OmniRoute/pull/4428) — thanks @oyi77)
 
 ---
