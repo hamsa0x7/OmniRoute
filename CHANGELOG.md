@@ -8,6 +8,8 @@
 
 _In development — bullets added per PR; finalized at release._
 
+- **feat(blackbox):** refresh provider model catalog with latest models. (thanks @ptkelanatechsolutions)
+
 ---
 
 ## [3.8.35] — 2026-06-23
