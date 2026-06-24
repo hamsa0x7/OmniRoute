@@ -102,6 +102,66 @@ function filterEligibleBySaturation(
 }
 
 // ---------------------------------------------------------------------------
+// Mechanism 1b — per-connection concurrency gating (maxConcurrent)
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve the configured concurrency cap for a connection. Treats null, <= 0,
+ * non-finite, and a missing entry all as "no limit" (returns null → never gates).
+ * The cap is the connection's `maxConcurrent` (provider_connections.max_concurrent),
+ * supplied by the caller as a pre-resolved Map so this module stays pure/sync.
+ */
+function resolveConnectionCap(
+  connectionId: string,
+  caps: Map<string, number | null> | undefined
+): number | null {
+  if (!connectionId || !caps) return null;
+  const cap = caps.get(connectionId);
+  if (typeof cap !== "number" || !Number.isFinite(cap) || cap <= 0) return null;
+  return cap;
+}
+
+/**
+ * Partition `targets` into those with concurrency headroom and those currently
+ * AT (or over) their per-connection `maxConcurrent`. A connection is "at cap"
+ * when its live in-flight count (quotaShareInflight) is >= its configured cap.
+ *
+ * Fail-open, mirroring filterEligibleBySaturation: when EVERY target is at cap
+ * (or no caps apply), all targets are returned as `withRoom` and `atCap` is
+ * empty — the combo is never hard-blocked by this gate. Targets without a
+ * positive cap are always treated as having room.
+ */
+function partitionByConcurrencyCap(
+  targets: ResolvedComboTarget[],
+  caps: Map<string, number | null> | undefined,
+  nowMs: number
+): { withRoom: ResolvedComboTarget[]; atCap: ResolvedComboTarget[] } {
+  if (!caps || caps.size === 0) return { withRoom: targets, atCap: [] };
+
+  const withRoom: ResolvedComboTarget[] = [];
+  const atCap: ResolvedComboTarget[] = [];
+
+  for (const target of targets) {
+    const connId = target.connectionId ?? "";
+    const cap = resolveConnectionCap(connId, caps);
+    if (cap === null) {
+      withRoom.push(target); // no limit → always has room
+      continue;
+    }
+    if (getInflight(connId, nowMs) >= cap) {
+      atCap.push(target);
+    } else {
+      withRoom.push(target);
+    }
+  }
+
+  // Fail-open: never demote the entire eligible set — if nothing has room,
+  // keep all targets dispatchable rather than hard-blocking the combo.
+  if (withRoom.length === 0) return { withRoom: targets, atCap: [] };
+  return { withRoom, atCap };
+}
+
+// ---------------------------------------------------------------------------
 // Mechanism 2 — DRR ordering
 // ---------------------------------------------------------------------------
 
@@ -190,18 +250,36 @@ export interface QuotaShareResult {
 }
 
 /**
+ * Options for {@link selectQuotaShareTarget}. Kept as a separate object so the
+ * function stays SYNCHRONOUS and PURE (no DB/network) and so the injected clock
+ * (`nowMs`) and testability are preserved — the caller pre-resolves any data.
+ */
+export interface QuotaShareOptions {
+  /**
+   * Per-connection concurrency caps: connectionId → `maxConcurrent`
+   * (provider_connections.max_concurrent). A connection whose live in-flight
+   * count is >= its cap is DEPRIORITIZED (moved to the tail), never hard-blocked
+   * (fail-open). null / <= 0 / a missing entry mean "no limit". When omitted, no
+   * concurrency gating is applied (backward compatible).
+   */
+  maxConcurrentByConnection?: Map<string, number | null>;
+}
+
+/**
  * Select the best target using the dedicated quota-share strategy.
  *
  * @param targets    Resolved combo targets (the combo's eligible step entries).
  * @param comboName  Combo name; used as the DRR state key.
  * @param modelStr   Requested model string, e.g. "anthropic/claude-opus-4".
  * @param nowMs      Current epoch ms for bucket/in-flight checks; defaults to Date.now().
+ * @param options    Optional pre-resolved data (per-connection concurrency caps).
  */
 export function selectQuotaShareTarget(
   targets: ResolvedComboTarget[],
   comboName: string,
   modelStr: string,
-  nowMs: number = Date.now()
+  nowMs: number = Date.now(),
+  options?: QuotaShareOptions
 ): QuotaShareResult {
   const noOp = (): void => {};
 
@@ -211,10 +289,18 @@ export function selectQuotaShareTarget(
 
   // 1) Per-model bucket gating.
   const eligible = filterEligibleBySaturation(targets, modelStr, nowMs);
-  const deprioritized = targets.filter((t) => !eligible.includes(t));
+  const saturatedDeprioritized = targets.filter((t) => !eligible.includes(t));
 
-  // 2) DRR ordering over the eligible set.
-  const ordered = applyDrr(eligible, comboName);
+  // 1b) Per-connection concurrency gating: connections already at their
+  // maxConcurrent are demoted behind those with headroom (fail-open).
+  const { withRoom, atCap } = partitionByConcurrencyCap(
+    eligible,
+    options?.maxConcurrentByConnection,
+    nowMs
+  );
+
+  // 2) DRR ordering over the set that still has concurrency headroom.
+  const ordered = applyDrr(withRoom, comboName);
 
   // 3) P2C over in-flight between the top two.
   let winner: ResolvedComboTarget;
@@ -231,7 +317,9 @@ export function selectQuotaShareTarget(
   const winnerConnectionId = winner.connectionId ?? "";
   if (winnerConnectionId) incrementInflight(winnerConnectionId, undefined, nowMs);
 
-  const orderedTargets = [winner, ...rest, ...deprioritized];
+  // Fallback order: winner → remaining-with-room → at-cap → saturated. Both
+  // deprioritized tiers stay dispatchable so the combo is never hard-blocked.
+  const orderedTargets = [winner, ...rest, ...atCap, ...saturatedDeprioritized];
 
   // Idempotent decrement callback for the caller's finally/abort path. Uses the
   // selection-time clock so the slot (stamped nowMs + lease) is never treated as

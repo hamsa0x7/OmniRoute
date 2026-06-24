@@ -75,6 +75,10 @@ import { estimateTokens } from "./contextManager.ts";
 import { getSessionConnection } from "./sessionManager.ts";
 import { applySessionStickiness, recordStickyBinding } from "./combo/sessionStickiness.ts";
 import { selectQuotaShareTarget } from "./combo/quotaShareStrategy.ts";
+import {
+  resolveMaxConcurrentByConnection,
+  makeConnectionConcurrencyResolver,
+} from "./combo/concurrencyCaps.ts";
 import { orderTargetsByEvalScores } from "./evalRouting.ts";
 import { generateRoutingHints } from "./manifestAdapter";
 import type { RoutingHint } from "./manifestAdapter";
@@ -1567,10 +1571,14 @@ export async function handleComboChat({
       `Headroom ordering: ${orderedTargets[0]?.modelStr}${orderedTargets[0]?.connectionId ? ` (${orderedTargets[0].connectionId})` : ""} has most free capacity`
     );
   } else if (strategy === "quota-share") {
-    // Internal quota-share combos (qtSd/): delegate 100% to the dedicated module
-    // (DRR + P2C in-flight + per-model bucket gating). No generic case is touched.
-    const qsModel = typeof body?.model === "string" ? body.model : (orderedTargets[0]?.modelStr ?? "");
-    orderedTargets = selectQuotaShareTarget(orderedTargets, combo.name, qsModel).orderedTargets;
+    // Internal quota-share combos (qtSd/): delegate to the dedicated module (DRR +
+    // P2C in-flight + per-model bucket gating + per-connection concurrency gating).
+    const qsModel =
+      typeof body?.model === "string" ? body.model : (orderedTargets[0]?.modelStr ?? "");
+    const qsMaxConcurrent = await resolveMaxConcurrentByConnection(orderedTargets);
+    orderedTargets = selectQuotaShareTarget(orderedTargets, combo.name, qsModel, Date.now(), {
+      maxConcurrentByConnection: qsMaxConcurrent,
+    }).orderedTargets;
     log.info(
       "COMBO",
       `Quota-share ordering: ${orderedTargets[0]?.modelStr}${orderedTargets[0]?.connectionId ? ` (${orderedTargets[0].connectionId})` : ""} selected (DRR+P2C)`
@@ -2601,6 +2609,10 @@ async function handleRoundRobinCombo({
     ? resolveComboConfig(combo, settings)
     : { ...getDefaultComboConfig(), ...(combo.config || {}) };
   const concurrency = config.concurrencyPerModel ?? 3;
+  // Honor each target connection's own maxConcurrent ceiling (cached per dispatch)
+  // so a low-concurrency subscription account is not flooded; falls back to the
+  // combo-level concurrency when the connection has no positive cap.
+  const resolveTargetConcurrency = makeConnectionConcurrencyResolver(concurrency);
   const queueTimeout = config.queueTimeoutMs ?? 30000;
   // #3872: pre-cascade queue depth — lower values fail over to the next combo member
   // sooner under concurrency saturation (0 = never queue). Default 20 (backward-compat).
@@ -2800,11 +2812,13 @@ async function handleRoundRobinCombo({
       continue;
     }
 
-    // Acquire semaphore slot (may wait in queue)
+    // Acquire semaphore slot (may wait in queue). Honor the connection's own
+    // maxConcurrent cap when set; else fall back to the combo-level concurrency.
+    const targetConcurrency = await resolveTargetConcurrency(target.connectionId);
     let release: () => void;
     try {
       release = await semaphore.acquire(semaphoreKey, {
-        maxConcurrency: concurrency,
+        maxConcurrency: targetConcurrency,
         timeoutMs: queueTimeout,
         maxQueueSize: queueDepth,
       });

@@ -28,10 +28,7 @@ import {
   _clearInflightForTest,
   DEFAULT_LEASE_MS,
 } from "../../open-sse/services/combo/quotaShareInflight.ts";
-import {
-  recordUsage,
-  _clearBucketsForTest,
-} from "../../src/lib/quota/accountBuckets.ts";
+import { recordUsage, _clearBucketsForTest } from "../../src/lib/quota/accountBuckets.ts";
 import { QUOTA_SHARE_STRATEGY } from "../../src/lib/quota/quotaCombos.ts";
 import { INTERNAL_ROUTING_STRATEGY_VALUES } from "../../src/shared/constants/routingStrategies.ts";
 import type { ResolvedComboTarget } from "../../open-sse/services/combo/types.ts";
@@ -153,8 +150,17 @@ describe("gating: per-model bucket saturation", () => {
     recordUsage("conn-x", "7d:claude-opus-4", 100, RESET_AT, NOW);
     const targets = [makeTarget("ek-x", "conn-x", 100, "anthropic/claude-sonnet-4-5")];
 
-    const result = selectQuotaShareTarget(targets, "combo-other-model", "anthropic/claude-sonnet-4-5", NOW);
-    assert.equal(result.target?.executionKey, "ek-x", "must not be gated by an unrelated model window");
+    const result = selectQuotaShareTarget(
+      targets,
+      "combo-other-model",
+      "anthropic/claude-sonnet-4-5",
+      NOW
+    );
+    assert.equal(
+      result.target?.executionKey,
+      "ek-x",
+      "must not be gated by an unrelated model window"
+    );
   });
 
   test("fail-open: all targets saturated → all eligible again, still returns a target", () => {
@@ -175,7 +181,12 @@ describe("gating: per-model bucket saturation", () => {
 
   test("no buckets recorded at all → fail-open, first/healthy target selected", () => {
     const targets = [makeTarget("ek-a", "conn-a"), makeTarget("ek-b", "conn-b")];
-    const result = selectQuotaShareTarget(targets, "combo-nodata", "anthropic/claude-sonnet-4-5", NOW);
+    const result = selectQuotaShareTarget(
+      targets,
+      "combo-nodata",
+      "anthropic/claude-sonnet-4-5",
+      NOW
+    );
     assert.ok(result.target !== null);
     assert.equal(result.orderedTargets.length, 2);
   });
@@ -253,7 +264,12 @@ describe("P2C in-flight", () => {
     incrementInflight("conn-busy", DEFAULT_LEASE_MS, NOW);
     incrementInflight("conn-busy", DEFAULT_LEASE_MS, NOW);
 
-    const result = selectQuotaShareTarget([t1, t2], "combo-p2c", "anthropic/claude-sonnet-4-5", NOW);
+    const result = selectQuotaShareTarget(
+      [t1, t2],
+      "combo-p2c",
+      "anthropic/claude-sonnet-4-5",
+      NOW
+    );
     assert.equal(
       result.target?.executionKey,
       "ek-free",
@@ -289,6 +305,170 @@ describe("P2C in-flight", () => {
     );
     // The returned callback must remain referenced to satisfy the contract.
     assert.equal(typeof result.decrementInflight, "function");
+  });
+});
+
+// ─── gating: per-connection concurrency cap (maxConcurrent) ─────────────────
+
+describe("gating: per-connection maxConcurrent", () => {
+  // DISCRIMINATING scenario: the at-cap connection has the LOWEST absolute
+  // in-flight load, so without concurrency gating the existing P2C tie-break
+  // would pick it. Only a real per-connection cap gate demotes it. This is what
+  // separates "gating works" from "P2C already happened to pick the free one".
+  test("at-cap connection with the LOWEST absolute load is still demoted (P2C alone would pick it)", () => {
+    // conn-tight: cap=1, in-flight=1  → AT cap, but lowest absolute load.
+    // conn-roomy: cap=10, in-flight=3 → below cap, but higher absolute load.
+    incrementInflight("conn-tight", DEFAULT_LEASE_MS, NOW);
+    incrementInflight("conn-roomy", DEFAULT_LEASE_MS, NOW);
+    incrementInflight("conn-roomy", DEFAULT_LEASE_MS, NOW);
+    incrementInflight("conn-roomy", DEFAULT_LEASE_MS, NOW);
+
+    const targets = [
+      makeTarget("ek-tight", "conn-tight", 100),
+      makeTarget("ek-roomy", "conn-roomy", 100),
+    ];
+    const maxConcurrentByConnection = new Map<string, number | null>([
+      ["conn-tight", 1],
+      ["conn-roomy", 10],
+    ]);
+
+    const gated = selectQuotaShareTarget(
+      targets,
+      "combo-cap-lowest",
+      "anthropic/claude-sonnet-4-5",
+      NOW,
+      { maxConcurrentByConnection }
+    );
+    assert.equal(
+      gated.target?.executionKey,
+      "ek-roomy",
+      "the below-cap connection must win even though it has MORE absolute in-flight load"
+    );
+    // The at-cap connection is NOT dropped — it stays as a last-resort fallback.
+    assert.ok(
+      gated.orderedTargets.some((t) => t.executionKey === "ek-tight"),
+      "the capped connection must still appear in the fallback list (never hard-blocked)"
+    );
+  });
+
+  test("a connection BELOW its maxConcurrent is NOT deprioritized", () => {
+    // conn-a has maxConcurrent=3 and only 1 in-flight → still has room, fully eligible.
+    incrementInflight("conn-a", DEFAULT_LEASE_MS, NOW);
+    const targets = [makeTarget("ek-a", "conn-a")];
+    const maxConcurrentByConnection = new Map<string, number | null>([["conn-a", 3]]);
+
+    const result = selectQuotaShareTarget(
+      targets,
+      "combo-below",
+      "anthropic/claude-sonnet-4-5",
+      NOW,
+      { maxConcurrentByConnection }
+    );
+    assert.equal(result.target?.executionKey, "ek-a", "below-cap connection must remain selected");
+  });
+
+  test("fail-open: ALL connections at their cap → all stay eligible, still returns a target", () => {
+    incrementInflight("conn-1", DEFAULT_LEASE_MS, NOW);
+    incrementInflight("conn-2", DEFAULT_LEASE_MS, NOW);
+    const targets = [makeTarget("ek-1", "conn-1"), makeTarget("ek-2", "conn-2")];
+    const maxConcurrentByConnection = new Map<string, number | null>([
+      ["conn-1", 1],
+      ["conn-2", 1],
+    ]);
+
+    const result = selectQuotaShareTarget(
+      targets,
+      "combo-allcap",
+      "anthropic/claude-sonnet-4-5",
+      NOW,
+      { maxConcurrentByConnection }
+    );
+    assert.ok(result.target !== null, "must never hard-block: a target is still returned");
+    assert.equal(result.orderedTargets.length, 2, "both targets remain dispatchable");
+  });
+
+  // DISCRIMINATING: the only candidate is at its cap with HIGH load while
+  // another candidate is under-cap with LOWER load — so this overlaps with P2C.
+  // Here we force the opposite: the under-cap winner has HIGHER absolute load so
+  // P2C alone would NOT pick it; the gate must.
+  test("at-cap target with high weight is demoted below an under-cap, higher-load target", () => {
+    // conn-cap: cap=2, in-flight=2  → AT cap. weight 900 (DRR would crown it).
+    // conn-free: cap=50, in-flight=5 → below cap, but MORE absolute load than cap.
+    incrementInflight("conn-cap", DEFAULT_LEASE_MS, NOW);
+    incrementInflight("conn-cap", DEFAULT_LEASE_MS, NOW);
+    for (let i = 0; i < 5; i++) incrementInflight("conn-free", DEFAULT_LEASE_MS, NOW);
+
+    const targets = [makeTarget("ek-cap", "conn-cap", 900), makeTarget("ek-free", "conn-free", 1)];
+    const maxConcurrentByConnection = new Map<string, number | null>([
+      ["conn-cap", 2],
+      ["conn-free", 50],
+    ]);
+
+    const result = selectQuotaShareTarget(
+      targets,
+      "combo-cap-vs-load",
+      "anthropic/claude-sonnet-4-5",
+      NOW,
+      { maxConcurrentByConnection }
+    );
+    assert.equal(
+      result.target?.executionKey,
+      "ek-free",
+      "concurrency gating must demote the at-cap target even though it has lower absolute load and higher DRR weight"
+    );
+  });
+
+  test("maxConcurrent null / 0 / missing is treated as 'no limit' (never gates)", () => {
+    // conn-null is heavily loaded (3 in-flight) but has null cap; conn-light has
+    // a positive cap but is well below it. With "null = no limit", conn-null must
+    // NOT be gated — so the lower-load conn-light wins purely by P2C, and BOTH
+    // remain dispatchable (nothing was demoted to the saturated tail).
+    incrementInflight("conn-null", DEFAULT_LEASE_MS, NOW);
+    incrementInflight("conn-null", DEFAULT_LEASE_MS, NOW);
+    incrementInflight("conn-null", DEFAULT_LEASE_MS, NOW);
+    const targets = [makeTarget("ek-null", "conn-null"), makeTarget("ek-light", "conn-light")];
+    const maxConcurrentByConnection = new Map<string, number | null>([
+      ["conn-null", null],
+      ["conn-light", 10],
+    ]);
+
+    const result = selectQuotaShareTarget(
+      targets,
+      "combo-nolimit",
+      "anthropic/claude-sonnet-4-5",
+      NOW,
+      { maxConcurrentByConnection }
+    );
+    assert.ok(result.target !== null);
+    assert.equal(result.orderedTargets.length, 2, "no connection gated when cap is null");
+
+    // And a 0 cap must behave identically to null (no gating): a single 0-cap
+    // connection at high load must still be selectable.
+    incrementInflight("conn-zero", DEFAULT_LEASE_MS, NOW);
+    incrementInflight("conn-zero", DEFAULT_LEASE_MS, NOW);
+    const zeroResult = selectQuotaShareTarget(
+      [makeTarget("ek-zero", "conn-zero")],
+      "combo-zero",
+      "anthropic/claude-sonnet-4-5",
+      NOW,
+      { maxConcurrentByConnection: new Map<string, number | null>([["conn-zero", 0]]) }
+    );
+    assert.equal(zeroResult.target?.executionKey, "ek-zero", "0 cap means no limit, not block");
+  });
+
+  test("no options passed → behaves exactly as before (backward compatible)", () => {
+    // Heavily loaded connection but no maxConcurrent info at all → no gating.
+    incrementInflight("conn-x", DEFAULT_LEASE_MS, NOW);
+    incrementInflight("conn-x", DEFAULT_LEASE_MS, NOW);
+    const targets = [makeTarget("ek-x", "conn-x")];
+    const result = selectQuotaShareTarget(
+      targets,
+      "combo-compat",
+      "anthropic/claude-sonnet-4-5",
+      NOW
+    );
+    assert.equal(result.target?.executionKey, "ek-x");
+    assert.equal(result.orderedTargets.length, 1);
   });
 });
 
