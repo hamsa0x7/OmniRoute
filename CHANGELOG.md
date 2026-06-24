@@ -8,6 +8,10 @@
 
 _In development — bullets added per PR; finalized at release._
 
+### ✨ New Features
+
+- **feat(providers):** add Pioneer AI (Fastino Labs) provider — OpenAI-compatible chat completions at `api.pioneer.ai/v1`. Registered with alias `pn`, `X-API-Key` auth, and a catalog of 10 open-tier serverless models (Qwen3, Llama 3.1/3.2, Gemma 3, SmolLM3). Free $75 credits, no credit card required. Gated enterprise models (Claude/GPT/Gemini) require prior fine-tuning on the Pioneer platform and are intentionally excluded from the catalog. (thanks @HikiNarou)
+
 ---
 
 ## [3.8.35] — 2026-06-23
