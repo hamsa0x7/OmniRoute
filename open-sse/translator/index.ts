@@ -555,6 +555,7 @@ export function initState(sourceFormat) {
       funcCallIds: {},
       funcArgsDone: {},
       funcItemDone: {},
+      completedOutputItems: [],
       completedSent: false,
     };
   }
