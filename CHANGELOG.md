@@ -8,6 +8,10 @@
 
 _In development — bullets added per PR; finalized at release._
 
+### ✨ New Features
+
+- **feat(cursor):** parse Cursor Composer DeepSeek-style inline tool calls — Composer `cu/composer-2.5*` models embed tool invocations in their visible text using `<｜tool▁calls▁begin｜>…<｜tool▁calls▁end｜>` markers instead of structured protobuf frames; a new streaming parser (`composerToolCalls.ts`) intercepts these in both streaming and non-streaming paths, suppresses the markers from the client-visible content, and emits proper OpenAI `tool_calls` deltas so downstream clients handle them natively. (thanks @noestelar)
+
 ---
 
 ## [3.8.35] — 2026-06-23
