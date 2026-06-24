@@ -8,6 +8,10 @@
 
 _In development — bullets added per PR; finalized at release._
 
+### 🔧 Bug Fixes
+
+- **fix(sse):** prevent non-JSON SSE lines and duplicate `[DONE]` from breaking clients. (thanks @qianze0628)
+
 ---
 
 ## [3.8.35] — 2026-06-23
