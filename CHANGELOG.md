@@ -8,6 +8,10 @@
 
 _In development — bullets added per PR; finalized at release._
 
+### ✨ New Features
+
+- **Embedding combo `dimensions` override**: embedding combos now support a `dimensions` field. When set, the configured value is injected into every upstream embedding request so all fallback targets receive the same dimensionality — the client's own `dimensions` value still takes precedence. (thanks @wenzetan)
+
 ---
 
 ## [3.8.35] — 2026-06-23
