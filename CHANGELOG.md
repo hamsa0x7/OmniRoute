@@ -8,6 +8,8 @@
 
 _In development — bullets added per PR; finalized at release._
 
+- **feat(proxy):** support auth-less `host:port` batch import and surface proxy-test failures. (thanks @dimaslanjaka)
+
 ---
 
 ## [3.8.35] — 2026-06-23
