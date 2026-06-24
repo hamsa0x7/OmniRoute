@@ -8,6 +8,8 @@
 
 _In development — bullets added per PR; finalized at release._
 
+- **fix(antigravity):** retry transient upstream failures (5xx + known transient signatures) and dedupe tool declarations. (thanks @Jordannst)
+
 ---
 
 ## [3.8.35] — 2026-06-23
