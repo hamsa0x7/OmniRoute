@@ -8,6 +8,10 @@
 
 _In development — bullets added per PR; finalized at release._
 
+### ✨ New Features
+
+- **kiro**: inline `<thinking>` stream splitter — when `<thinking_mode>enabled</thinking_mode>` is present, `assistantResponseEvent` content is now split into separate `delta.content` / `delta.reasoning_content` SSE chunks (new `open-sse/executors/kiroThinking.ts` module wired into `KiroExecutor.transformEventStreamToSSE`).
+
 ---
 
 ## [3.8.35] — 2026-06-23
