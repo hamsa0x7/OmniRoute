@@ -8,6 +8,8 @@
 
 _In development — bullets added per PR; finalized at release._
 
+- **fix(sse):** surface malformed HTTP-200 upstream responses as proper errors with sanitized diagnostics. (thanks @haipham22)
+
 ---
 
 ## [3.8.35] — 2026-06-23
