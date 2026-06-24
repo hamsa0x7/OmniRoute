@@ -8,6 +8,10 @@
 
 _In development — bullets added per PR; finalized at release._
 
+### 🔧 Bug Fixes
+
+- **fix(tts):** resolve Gemini TTS models from catalog and add `gemini-3.1-flash-tts-preview` as the new default Vertex TTS model. (thanks @nguyenha935)
+
 ---
 
 ## [3.8.35] — 2026-06-23
