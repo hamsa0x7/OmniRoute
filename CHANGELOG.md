@@ -8,6 +8,10 @@
 
 _In development — bullets added per PR; finalized at release._
 
+### 🔧 Bug Fixes
+
+- **oauth(kiro):** support Kiro IDC (organization) token import — when the `~/.aws/sso/cache` token carries a `clientIdHash`, auto-import now reads the linked client registration file to obtain `clientId`/`clientSecret`, probes the Kiro IDE `profile.json` for `profileArn` (ARN region normalized to `us-east-1` for the runtime gateway), and refreshes via the regional AWS OIDC endpoint instead of the social path; the import schema and modal forward these credentials so manual imports also work for IDC tokens. (thanks @enjoyer-hub)
+
 ---
 
 ## [3.8.35] — 2026-06-23
