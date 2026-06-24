@@ -8,6 +8,8 @@
 
 _In development — bullets added per PR; finalized at release._
 
+- **fix(usage):** dedupe request-usage logging and debounce stats events to reduce churn. (thanks @nguyenxvotanminh3)
+
 ---
 
 ## [3.8.35] — 2026-06-23
