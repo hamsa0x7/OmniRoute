@@ -95,6 +95,17 @@ export const waitForCooldownSettingsSchema = z
   })
   .strict();
 
+// Quota-share combo cooldown-aware retry (Variante A). Bounds mirror
+// normalizeComboCooldownWaitSettings: a single wait <= 30s, <= 10 attempts.
+export const comboCooldownWaitSettingsSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    maxWaitMs: z.number().int().min(0).max(30000).optional(),
+    maxAttempts: z.number().int().min(0).max(10).optional(),
+    budgetMs: z.number().int().min(0).max(300000).optional(),
+  })
+  .strict();
+
 export const providerCooldownSettingsSchema = z
   .object({
     enabled: z.boolean().optional(),
@@ -134,6 +145,7 @@ export const updateResilienceSchema = z
       .strict()
       .optional(),
     waitForCooldown: waitForCooldownSettingsSchema.optional(),
+    comboCooldownWait: comboCooldownWaitSettingsSchema.optional(),
     providerCooldown: providerCooldownSettingsSchema.optional(),
     profiles: z
       .object({
@@ -151,6 +163,7 @@ export const updateResilienceSchema = z
       !value.connectionCooldown &&
       !value.providerBreaker &&
       !value.waitForCooldown &&
+      !value.comboCooldownWait &&
       !value.providerCooldown &&
       !value.profiles &&
       !value.defaults

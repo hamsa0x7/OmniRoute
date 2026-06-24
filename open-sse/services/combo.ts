@@ -10,6 +10,7 @@ import {
   classifyLockoutReason,
   decayModelFailureCount,
   formatRetryAfter,
+  getModelLockoutInfo,
   getRuntimeProviderProfile,
   isModelLocked,
   recordModelLockoutFailure,
@@ -124,6 +125,11 @@ import {
   recordStickyWeightedSuccess,
 } from "./combo/rrState.ts";
 import { validateResponseQuality, toRetryAfterDisplayValue } from "./combo/validateQuality.ts";
+import { resolveComboCooldownWaitDecision } from "./combo/comboCooldownRetry.ts";
+import {
+  computeClosestRetryAfter,
+  waitForCooldownAwareRetry,
+} from "../../src/sse/services/cooldownAwareRetry.ts";
 import { handleFusionChat, type FusionTuning } from "./fusion.ts";
 import {
   TRANSIENT_FOR_SEMAPHORE,
@@ -1641,7 +1647,27 @@ export async function handleComboChat({
 
   let globalAttempts = 0;
 
-  try {
+  // Quota-share cooldown-aware retry (Variante A). Only quota-share (qtSd/)
+  // combos opt in: when the set loop would crystallize a 429 model_cooldown
+  // because the target hit a SHORT transient cooldown, we wait it out and
+  // re-run the whole set loop instead of propagating the 429. `globalAttempts`
+  // persists across these waits so MAX_GLOBAL_ATTEMPTS still bounds total work.
+  // The wait happens at the crystallization point, which holds no semaphore slot
+  // (the quota-share path never calls semaphore.acquire) and no explicit
+  // in-flight lease that must be released here.
+  //
+  // The set loop is wrapped in a small recursive closure rather than an extra
+  // labelled `while (true)` so the loop body keeps its original indentation; a
+  // wait+redispatch is a tail `return dispatchWithCooldownRetry()`, which
+  // re-runs ONLY the set loop (selection / shadow routing / setup above stay
+  // untouched), preserving the pre-existing `continue`-to-top-of-set-loop
+  // semantics exactly.
+  const comboCooldownWaitEnabled =
+    strategy === "quota-share" && resilienceSettings.comboCooldownWait.enabled;
+  let comboCooldownAttempt = 0;
+  let comboCooldownBudgetLeftMs = resilienceSettings.comboCooldownWait.budgetMs;
+
+  const dispatchWithCooldownRetry = async (): Promise<Response> => {
     for (let setTry = 0; setTry <= maxSetRetries; setTry++) {
       // #1731: Per-set-iteration set of providers whose quota is fully exhausted.
       // Reset each retry so providers excluded in a previous attempt get another chance.
@@ -2565,6 +2591,43 @@ export async function handleComboChat({
       const msg = lastError || "All combo models unavailable";
 
       if (earliestRetryAfter) {
+        // Quota-share cooldown-aware retry: instead of crystallizing the 429,
+        // wait out a SHORT transient cooldown and re-run the whole set loop.
+        // Guarded by the helper (quota_exhausted/auth/not-found excluded,
+        // ceiling, attempts, budget). MAX_GLOBAL_ATTEMPTS still bounds total
+        // dispatches.
+        if (comboCooldownWaitEnabled && status === 429) {
+          const decision = resolveComboCooldownWaitDecision({
+            targets: orderedTargets,
+            earliestRetryAfter,
+            attempt: comboCooldownAttempt,
+            budgetLeftMs: comboCooldownBudgetLeftMs,
+            settings: resilienceSettings.comboCooldownWait,
+            lookupLock: (provider, connectionId) => {
+              const rawModel = parseModel(orderedTargets[0]?.modelStr ?? "").model || "";
+              return getModelLockoutInfo(provider, connectionId, rawModel);
+            },
+            computeWaitMs: (retryAfter) => computeClosestRetryAfter(retryAfter).waitMs,
+          });
+          if (decision.wait) {
+            log.info(
+              "COMBO",
+              `Quota-share cooldown wait: ${msg} — waiting ${Math.ceil(
+                decision.waitMs / 1000
+              )}s (reason=${decision.reason ?? "?"}) then retrying (attempt ${
+                comboCooldownAttempt + 1
+              }/${resilienceSettings.comboCooldownWait.maxAttempts})`
+            );
+            const completed = await waitForCooldownAwareRetry(decision.waitMs, signal);
+            if (!completed) {
+              log.info("COMBO", "Quota-share cooldown wait aborted by client disconnect");
+              return errorResponse(499, "Request aborted");
+            }
+            comboCooldownAttempt += 1;
+            comboCooldownBudgetLeftMs = Math.max(0, comboCooldownBudgetLeftMs - decision.waitMs);
+            return dispatchWithCooldownRetry();
+          }
+        }
         const retryHuman = formatRetryAfter(toRetryAfterDisplayValue(earliestRetryAfter));
         log.warn("COMBO", `All models failed | ${msg} (${retryHuman})`);
         return unavailableResponse(status, msg, earliestRetryAfter, retryHuman);
@@ -2578,6 +2641,10 @@ export async function handleComboChat({
     }
 
     return errorResponse(503, "Combo routing completed without an upstream response");
+  };
+
+  try {
+    return await dispatchWithCooldownRetry();
   } finally {
     // G2: Clean up candidate registry to prevent unbounded memory growth.
     _unregisterExecutionCandidates(_registeredExecutionKeys);

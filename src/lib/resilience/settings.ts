@@ -42,6 +42,21 @@ export interface WaitForCooldownSettings {
   maxRetryWaitMs: number;
 }
 
+/**
+ * Quota-share combo cooldown-aware retry (Variante A). A quota-share (`qtSd/…`)
+ * combo that would crystallize a 429 `model_cooldown` for a SHORT transient
+ * cooldown waits it out and re-dispatches instead. Guards (gating + the
+ * `quota_exhausted`/auth/not-found exclusions) live in
+ * open-sse/services/combo/comboCooldownRetry.ts; `maxWaitMs`/`maxAttempts`/
+ * `budgetMs` bound a single wait, the retry cycles, and the total wait time.
+ */
+export interface ComboCooldownWaitSettings {
+  enabled: boolean;
+  maxWaitMs: number;
+  maxAttempts: number;
+  budgetMs: number;
+}
+
 export interface ProviderCooldownSettings {
   /**
    * Minimum cooldown (ms) before a failed provider/connection can be retried.
@@ -125,6 +140,7 @@ export interface ResilienceSettings {
   connectionCooldown: Record<AuthCategory, ConnectionCooldownProfileSettings>;
   providerBreaker: Record<AuthCategory, ProviderBreakerProfileSettings>;
   waitForCooldown: WaitForCooldownSettings;
+  comboCooldownWait: ComboCooldownWaitSettings;
   providerCooldown: ProviderCooldownSettings;
   quotaPreflight: QuotaPreflightSettings;
   streamRecovery: StreamRecoverySettings;
@@ -135,6 +151,7 @@ export interface ResilienceSettingsPatch {
   connectionCooldown?: Partial<Record<AuthCategory, Partial<ConnectionCooldownProfileSettings>>>;
   providerBreaker?: Partial<Record<AuthCategory, Partial<ProviderBreakerProfileSettings>>>;
   waitForCooldown?: Partial<WaitForCooldownSettings>;
+  comboCooldownWait?: Partial<ComboCooldownWaitSettings>;
   providerCooldown?: Partial<ProviderCooldownSettings>;
   quotaPreflight?: Partial<QuotaPreflightSettings>;
   streamRecovery?: Partial<StreamRecoverySettings>;
@@ -245,6 +262,15 @@ export const DEFAULT_RESILIENCE_SETTINGS: ResilienceSettings = {
     maxRetries: 3,
     maxRetryWaitSec: 30,
     maxRetryWaitMs: 30000,
+  },
+  // Conservative defaults: wait at most 5s for a single short transient
+  // cooldown, at most 2 redispatch cycles, never more than 8s total. Active only
+  // for quota-share combos and only for transient (non quota_exhausted) reasons.
+  comboCooldownWait: {
+    enabled: true,
+    maxWaitMs: 5000,
+    maxAttempts: 2,
+    budgetMs: 8000,
   },
   providerCooldown: {
     minRetryCooldownMs: Number(process.env.PROVIDER_COOLDOWN_MIN_MS || "5000"),
@@ -503,6 +529,27 @@ function normalizeWaitForCooldownSettings(
   };
 }
 
+function normalizeComboCooldownWaitSettings(
+  next: unknown,
+  fallback: ComboCooldownWaitSettings
+): ComboCooldownWaitSettings {
+  const record = asRecord(next);
+  // Hard ceiling of 30s on a single wait — this layer only ever exists for
+  // SHORT transient cooldowns; anything longer should fall through to the
+  // existing 429 crystallization (and the cross-request cooldown layers).
+  const maxWaitMs = toInteger(record.maxWaitMs, fallback.maxWaitMs, { min: 0, max: 30000 });
+  const maxAttempts = toInteger(record.maxAttempts, fallback.maxAttempts, { min: 0, max: 10 });
+  // Budget can never be smaller than a single wait, otherwise no wait could
+  // ever fire; floor it at maxWaitMs.
+  const budgetMs = toInteger(record.budgetMs, fallback.budgetMs, {
+    min: maxWaitMs,
+    max: 5 * 60 * 1000,
+  });
+  const enabled = toBoolean(record.enabled, fallback.enabled) && maxWaitMs > 0 && maxAttempts > 0;
+
+  return { enabled, maxWaitMs, maxAttempts, budgetMs };
+}
+
 function normalizeProviderCooldownSettings(
   next: unknown,
   fallback: ProviderCooldownSettings
@@ -617,6 +664,7 @@ function buildLegacyFallback(settings: JsonRecord): ResilienceSettings {
       maxRetryWaitSec: waitMaxRetrySec,
       maxRetryWaitMs: waitMaxRetrySec * 1000,
     },
+    comboCooldownWait: DEFAULT_RESILIENCE_SETTINGS.comboCooldownWait,
     providerCooldown: DEFAULT_RESILIENCE_SETTINGS.providerCooldown,
     quotaPreflight: DEFAULT_RESILIENCE_SETTINGS.quotaPreflight,
     streamRecovery: streamRecoveryDefaults,
@@ -655,6 +703,10 @@ export function resolveResilienceSettings(
     waitForCooldown: normalizeWaitForCooldownSettings(
       current.waitForCooldown,
       fallback.waitForCooldown
+    ),
+    comboCooldownWait: normalizeComboCooldownWaitSettings(
+      current.comboCooldownWait,
+      fallback.comboCooldownWait
     ),
     providerCooldown: normalizeProviderCooldownSettings(
       current.providerCooldown,
@@ -700,6 +752,10 @@ export function mergeResilienceSettings(
     waitForCooldown: normalizeWaitForCooldownSettings(
       updates.waitForCooldown,
       current.waitForCooldown
+    ),
+    comboCooldownWait: normalizeComboCooldownWaitSettings(
+      updates.comboCooldownWait,
+      current.comboCooldownWait
     ),
     providerCooldown: normalizeProviderCooldownSettings(
       updates.providerCooldown,
