@@ -213,12 +213,17 @@ export function translateRequest(
         if (toOpenAI) {
           // Forward Copilot UA marker to source→openai translators only.
           const hasTargetHint = targetFormat != null;
+          // #2069 — forward the cache_control-preservation intent so the
+          // source→openai translator (e.g. claudeToOpenAIRequest) keeps the
+          // client's breakpoints for caching-capable OpenAI-format providers.
+          const preserveCacheControl = options?.preserveCacheControl === true;
           const step1Credentials =
-            options?.copilotClient || hasTargetHint
+            options?.copilotClient || hasTargetHint || preserveCacheControl
               ? {
                   ...(credentials && typeof credentials === "object" ? credentials : {}),
                   ...(options?.copilotClient ? { _copilotClient: true } : {}),
                   ...(hasTargetHint ? { _targetFormat: targetFormat } : {}),
+                  ...(preserveCacheControl ? { _preserveCacheControl: true } : {}),
                 }
               : credentials;
           result = toOpenAI(model, result, stream, step1Credentials);
@@ -256,7 +261,11 @@ export function translateRequest(
   // Always normalize to clean OpenAI format when target is OpenAI
   // This handles hybrid requests (e.g., OpenAI messages + Claude tools)
   if (targetFormat === FORMATS.OPENAI) {
-    result = filterToOpenAIFormat(result);
+    // #2069 — preserve client cache_control breakpoints for caching-capable
+    // OpenAI-format providers when requested upstream (shouldPreserveCacheControl).
+    result = filterToOpenAIFormat(result, {
+      preserveCacheControl: options?.preserveCacheControl === true,
+    });
   }
 
   // Final step: prepare request for Claude format endpoints

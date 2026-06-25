@@ -92,6 +92,14 @@ const CACHING_PROVIDERS = new Set([
   "openai",
   "codex",
   "azure",
+  // #2069 — Alibaba DashScope's OpenAI-compatible endpoints (alibaba /
+  // alibaba-cn, upstream "alicode"/"alicode-intl") natively honor
+  // `cache_control: {type:"ephemeral"}` breakpoints. Without these entries
+  // shouldPreserveCacheControl() returns false for Claude Code clients and the
+  // OpenAI-format translator strips cache_control, so DashScope never sees the
+  // hints and every request is a cache miss.
+  "alibaba",
+  "alibaba-cn",
 ]);
 
 /**
