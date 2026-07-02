@@ -720,7 +720,7 @@ export async function handleComboChat({
   nesting = null,
 }: HandleComboChatOptions): Promise<Response> {
   const comboCtx = createComboContext({ body, combo, settings, relayOptions, log });
-  let {
+  const {
     strategy,
     relayConfig,
     resilienceSettings,
@@ -1128,56 +1128,6 @@ export async function handleComboChat({
   }
 
   // Pipeline dispatch: route smart/pipeline-enabled combos through the multi-stage pipeline
-
-  // #5903: Check for active session affinity before running dynamic routing strategies.
-  // If an affinity exists for a provider present in the combo targets, force that target
-  // and bypass the strategy.
-  if (effectiveSessionId && orderedTargets.length > 0 && strategy !== "weighted") {
-    try {
-      const { getSessionAccountAffinity } =
-        await import("../../src/lib/db/sessionAccountAffinity.ts");
-      const ttlMs =
-        Number.isFinite(Number(config.codexSessionAffinityTtlMs)) &&
-        Number(config.codexSessionAffinityTtlMs) > 0
-          ? Number(config.codexSessionAffinityTtlMs)
-          : 0;
-
-      if (ttlMs > 0) {
-        const existing = getSessionAccountAffinity(effectiveSessionId, "codex", ttlMs);
-        if (existing) {
-          const affinityTarget = orderedTargets.find((t) => {
-            const isCodex =
-              t.provider === "codex" ||
-              (typeof t.modelStr === "string" && t.modelStr.startsWith("codex/"));
-            if (!isCodex) return false;
-            if (t.connectionId && t.connectionId !== existing.connectionId) return false;
-            if (
-              Array.isArray(t.allowedConnectionIds) &&
-              t.allowedConnectionIds.length > 0 &&
-              !t.allowedConnectionIds.includes(existing.connectionId)
-            )
-              return false;
-            return true;
-          });
-
-          if (affinityTarget) {
-            log.info(
-              "COMBO",
-              `Session affinity found for ${effectiveSessionId.slice(0, 8)} -> ${existing.connectionId}, overriding strategy ${strategy}`
-            );
-            const forcedTarget: ResolvedComboTarget = {
-              ...affinityTarget,
-              connectionId: existing.connectionId,
-            };
-            orderedTargets = [forcedTarget, ...orderedTargets.filter((t) => t !== affinityTarget)];
-            strategy = "fill-first";
-          }
-        }
-      }
-    } catch (e) {
-      log.warn({ err: e }, "Failed to apply combo session affinity");
-    }
-  }
   if (strategy === "auto") {
     const autoParsed = parseAutoPrefix(combo.name);
     const autoVariant = autoParsed.valid ? autoParsed.variant : undefined;
