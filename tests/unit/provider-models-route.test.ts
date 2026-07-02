@@ -244,6 +244,54 @@ test("provider models route discovers SiliconFlow models from configured China b
   ]);
 });
 
+test("provider models route handles local hostnames named 'v1' correctly", async () => {
+  const connection = await seedConnection("openai-compatible-local-v1", {
+    apiKey: "sk-local",
+    providerSpecificData: {
+      baseUrl: "http://v1/chat/completions",
+    },
+  });
+  const seenUrls: string[] = [];
+
+  globalThis.fetch = async (url) => {
+    seenUrls.push(String(url));
+    return Response.json({
+      data: [{ id: "local-v1-model", name: "Local v1 Model" }],
+    });
+  };
+
+  const response = await callRoute(connection.id);
+  const body = (await response.json()) as any;
+
+  assert.equal(response.status, 200);
+  assert.equal(body.source, "api");
+  assert.deepEqual(seenUrls, ["http://v1/v1/models"]);
+});
+
+test("provider models route correctly strips standard /v1 paths", async () => {
+  const connection = await seedConnection("openai-compatible-standard-v1", {
+    apiKey: "sk-standard",
+    providerSpecificData: {
+      baseUrl: "https://api.openai.com/v1",
+    },
+  });
+  const seenUrls: string[] = [];
+
+  globalThis.fetch = async (url) => {
+    seenUrls.push(String(url));
+    return Response.json({
+      data: [{ id: "standard-model", name: "Standard Model" }],
+    });
+  };
+
+  const response = await callRoute(connection.id);
+  const body = (await response.json()) as any;
+
+  assert.equal(response.status, 200);
+  assert.equal(body.source, "api");
+  assert.deepEqual(seenUrls, ["https://api.openai.com/v1/models"]);
+});
+
 test("provider models route returns static catalog entries for providers with hardcoded models", async () => {
   const connection = await seedConnection("bailian-coding-plan", {
     apiKey: "bailian-key",

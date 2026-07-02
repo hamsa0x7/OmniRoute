@@ -759,21 +759,7 @@ async function selectSessionAffinityConnection(
     );
   }
 
-  const connection = [...connections].sort(compareLruConnections)[0] ?? null;
-  if (!connection) return null;
-
-  upsertSessionAccountAffinity(sessionKey, provider, connection.id, Date.now(), ttlMs);
-  await updateProviderConnection(connection.id, {
-    lastUsedAt: new Date().toISOString(),
-    consecutiveUseCount: 1,
-  });
-  log.info(
-    "AUTH",
-    `new affinity created for session_key=${formatSessionKeyForLog(
-      sessionKey
-    )} -> connection ${connection.id.slice(0, 8)}`
-  );
-  return connection;
+  return null;
 }
 
 /**
@@ -1631,6 +1617,12 @@ export async function getProviderCredentials(
         return new Date(a.lastUsedAt).getTime() - new Date(b.lastUsedAt).getTime();
       });
       connection = sorted[0];
+
+      // Update lastUsedAt so it doesn't get picked repeatedly (#5903)
+      await updateProviderConnection(connection.id, {
+        lastUsedAt: new Date().toISOString(),
+        consecutiveUseCount: 1,
+      });
     } else if (strategy === "cost-optimized") {
       // Cost Optimized: sort by priority ascending (lower = cheaper/preferred)
       // Future: can be enhanced with actual cost data per provider
@@ -1646,6 +1638,23 @@ export async function getProviderCredentials(
     } else {
       // Default: fill-first (already sorted by priority in getProviderConnections)
       connection = orderedConnections[0];
+    }
+
+    // Save affinity if one was requested but didn't exist yet
+    if (connection && !affinityConnection && options.sessionKey && sessionAffinityTtlMs > 0) {
+      upsertSessionAccountAffinity(
+        options.sessionKey,
+        provider,
+        connection.id,
+        Date.now(),
+        sessionAffinityTtlMs
+      );
+      log.info(
+        "AUTH",
+        `new affinity created for session_key=${formatSessionKeyForLog(
+          options.sessionKey
+        )} -> connection ${connection.id.slice(0, 8)}`
+      );
     }
 
     if (provider === "antigravity" && connection) {
