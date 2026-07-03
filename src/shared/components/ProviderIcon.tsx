@@ -42,24 +42,17 @@ const KNOWN_PNGS = new Set([
   "aimlapi",
   "anthropic-m",
   "blackbox",
-  "claude",
-  "continue",
-  "copilot",
-  "cursor",
-  "deepgram",
   "ironclaw",
   "kie",
   "nanobot",
   "oai-cc",
   "oai-r",
-  "openclaw",
   "zeroclaw",
   "adapta-web",
   "blackbox-web",
   "cliproxyapi",
   "empower",
   "gigachat",
-  "heroku",
   "lemonade",
   "linkup-search",
   "llamafile",
@@ -67,12 +60,14 @@ const KNOWN_PNGS = new Set([
   "maritalk",
   "nanogpt",
   "nscale",
-  "ovhcloud",
   "piapi",
   "predibase",
   "reka",
 ]);
 const KNOWN_SVGS = new Set([
+  "claude",
+  "copilot",
+  "openclaw",
   "apikey",
   "bazaarlink",
   "brave",
@@ -114,6 +109,11 @@ const KNOWN_SVGS = new Set([
   "synthetic",
   "wandb",
   "youcom-search",
+  "continue",
+  "cursor",
+  "deepgram",
+  "heroku",
+  "ovhcloud",
 ]);
 
 const ProviderIcon = memo(function ProviderIcon({
@@ -131,10 +131,33 @@ const ProviderIcon = memo(function ProviderIcon({
   const [failedAssets, setFailedAssets] = useState<Record<string, true>>({});
   const pngKey = `${normalizedId}:png`;
   const svgKey = `${normalizedId}:svg`;
-  const usePng = !lobeIcon && hasPng && !failedAssets[pngKey];
-  const useSvg = !lobeIcon && hasSvg && !failedAssets[svgKey] && (!hasPng || failedAssets[pngKey]);
+  const theSvgKey = `${normalizedId}:thesvg`;
 
-  if (lobeIcon) {
+  const useSvg = hasSvg && !failedAssets[svgKey];
+  const useLobeIcon = !useSvg && !!lobeIcon;
+  const useTheSvg = !useSvg && !useLobeIcon && !failedAssets[theSvgKey];
+  const usePng = !useSvg && !useLobeIcon && !useTheSvg && hasPng && !failedAssets[pngKey];
+
+  if (useSvg) {
+    return (
+      <span
+        className={className}
+        style={{ display: "inline-flex", alignItems: "center", ...style }}
+      >
+        <Image
+          src={`/providers/${normalizedId}.svg`}
+          alt={providerId}
+          width={size}
+          height={size}
+          style={{ objectFit: "contain" }}
+          onError={() => setFailedAssets((current) => ({ ...current, [svgKey]: true }))}
+          unoptimized
+        />
+      </span>
+    );
+  }
+
+  if (useLobeIcon) {
     return (
       <span
         className={className}
@@ -145,6 +168,24 @@ const ProviderIcon = memo(function ProviderIcon({
           size,
           style: { flex: "none" },
         })}
+      </span>
+    );
+  }
+
+  if (useTheSvg) {
+    return (
+      <span
+        className={className}
+        style={{ display: "inline-flex", alignItems: "center", ...style }}
+      >
+        <img
+          src={`https://thesvg.org/icons/${normalizedId}/default.svg`}
+          alt={providerId}
+          width={size}
+          height={size}
+          style={{ objectFit: "contain", flex: "none" }}
+          onError={() => setFailedAssets((current) => ({ ...current, [theSvgKey]: true }))}
+        />
       </span>
     );
   }
@@ -164,25 +205,6 @@ const ProviderIcon = memo(function ProviderIcon({
           onError={() => {
             setFailedAssets((current) => ({ ...current, [pngKey]: true }));
           }}
-          unoptimized
-        />
-      </span>
-    );
-  }
-
-  if (useSvg) {
-    return (
-      <span
-        className={className}
-        style={{ display: "inline-flex", alignItems: "center", ...style }}
-      >
-        <Image
-          src={`/providers/${normalizedId}.svg`}
-          alt={providerId}
-          width={size}
-          height={size}
-          style={{ objectFit: "contain" }}
-          onError={() => setFailedAssets((current) => ({ ...current, [svgKey]: true }))}
           unoptimized
         />
       </span>
