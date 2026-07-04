@@ -4,6 +4,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ToolBatchStatusMap } from "@/shared/types/cliBatchStatus";
+import { EXPECTED_AGENT_COUNT } from "@/shared/schemas/cliCatalog";
 
 // ── Mocks (declared before any imports that depend on them) ───────────────────
 
@@ -48,21 +49,17 @@ vi.mock("@/app/(dashboard)/dashboard/cli-code/components/CliStatusBadge", () => 
 
 // ── Static imports after mocks ────────────────────────────────────────────────
 
-const { default: CliAgentsPageClient } = await import(
-  "@/app/(dashboard)/dashboard/cli-agents/CliAgentsPageClient"
-);
+const { default: CliAgentsPageClient } =
+  await import("@/app/(dashboard)/dashboard/cli-agents/CliAgentsPageClient");
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
-/** 6 agent tool ids from the catalog (§3.2 of plan-14) */
-const AGENT_IDS = [
-  "openclaw",
-  "hermes-agent",
-  "goose",
-  "interpreter",
-  "warp",
-  "agent-deck",
-] as const;
+import { CLI_TOOLS } from "@/shared/constants/cliTools";
+
+/** Agent tool ids from the catalog */
+const AGENT_IDS = Object.values(CLI_TOOLS)
+  .filter((t) => t.category === "agent")
+  .map((t) => t.id);
 
 function makeBatchStatusMap(overrides: Partial<ToolBatchStatusMap> = {}): ToolBatchStatusMap {
   const base: ToolBatchStatusMap = {};
@@ -144,9 +141,9 @@ describe("CliAgentsPageClient", () => {
     expect(container.textContent).toContain("pageTitle");
   }, 15000);
 
-  it("2. renders exactly 6 agent tool cards", async () => {
+  it(`2. renders exactly ${EXPECTED_AGENT_COUNT} agent tool cards`, async () => {
     const container = await renderPage();
-    expect(countAgentCards(container)).toBe(6);
+    expect(countAgentCards(container)).toBe(EXPECTED_AGENT_COUNT);
   }, 15000);
 
   it("3. search filter — 'hermes' shows 1 card (hermes-agent)", async () => {
@@ -169,9 +166,7 @@ describe("CliAgentsPageClient", () => {
     const visibleCards = countAgentCards(container);
     expect(visibleCards).toBe(1);
 
-    const remainingHrefs = Array.from(
-      container.querySelectorAll<HTMLAnchorElement>("a[href]")
-    )
+    const remainingHrefs = Array.from(container.querySelectorAll<HTMLAnchorElement>("a[href]"))
       .filter((a) => a.getAttribute("href")?.startsWith("/dashboard/cli-agents/"))
       .map((a) => a.getAttribute("href") ?? "");
 
