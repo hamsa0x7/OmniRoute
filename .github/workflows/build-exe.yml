@@ -1,0 +1,52 @@
+name: Build Windows EXE (feat/exe-build)
+
+on:
+  push:
+    branches: [feat/exe-build]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-exe:
+    name: Build Windows EXE
+    runs-on: windows-latest
+    env:
+      JWT_SECRET: ci-build-secret-with-sufficient-length-for-validation
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Sanitize Windows home directory
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/home"
+          echo "USERPROFILE=$RUNNER_TEMP/home" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Next.js standalone
+        run: npm run build
+
+      - name: Install Electron dependencies
+        working-directory: electron
+        run: npm install --no-audit --no-fund
+
+      - name: Build Electron for Windows
+        working-directory: electron
+        run: npm run build:win
+
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: omniroute-windows-exe
+          path: electron/dist-electron/*.exe
+          if-no-files-found: error
