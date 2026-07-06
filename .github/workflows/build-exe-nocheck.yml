@@ -1,0 +1,62 @@
+name: Build Electron EXE (No Checks)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    name: Build Windows EXE
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          NPM_CONFIG_LEGACY_PEER_DEPS: true
+
+      - name: Sanitize Windows home directory
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/home"
+          echo "USERPROFILE=$RUNNER_TEMP/home" >> "$GITHUB_ENV"
+
+      - name: Build Next.js standalone
+        env:
+          JWT_SECRET: ci-build-secret-with-sufficient-length-for-validation
+          NODE_OPTIONS: "--max_old_space_size=6144"
+        run: npm run build
+
+      - name: Install Electron dependencies
+        working-directory: electron
+        run: npm install --no-audit --no-fund
+
+      - name: Build Electron for Windows
+        working-directory: electron
+        run: npm run build:win -- --publish never
+
+      - name: Collect installer
+        shell: bash
+        run: |
+          mkdir -p release-assets
+          cd electron/dist-electron
+          for file in *.exe; do
+            case "$file" in *Setup*) continue ;; esac
+            [ -f "$file" ] && cp "$file" "../../release-assets/OmniRoute.exe" && break
+          done
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: OmniRoute-Windows
+          path: release-assets/
