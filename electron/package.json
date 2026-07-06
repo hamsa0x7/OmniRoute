@@ -46,11 +46,7 @@
       "output": "dist-electron",
       "buildResources": "assets"
     },
-    "publish": {
-      "provider": "github",
-      "owner": "hamsa0x7",
-      "repo": "OmniRoute"
-    },
+    "publish": null,
     "files": [
       "main.js",
       "preload.js",
