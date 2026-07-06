@@ -63,4 +63,4 @@ export const CliCatalogSchema = z.record(CliCatalogEntrySchema);
 // +1 (2026-07-02): "codewhale" added as a dual entry alongside "deepseek-tui"
 // (CodeWhale is the actively-maintained successor to DeepSeek TUI).
 export const EXPECTED_CODE_COUNT = 20;
-export const EXPECTED_AGENT_COUNT = 6;
+export const EXPECTED_AGENT_COUNT = 9;
