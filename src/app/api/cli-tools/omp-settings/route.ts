@@ -7,9 +7,10 @@ import path from "path";
 import os from "os";
 import fs from "fs/promises";
 import { load as yamlLoad, dump as yamlDump } from "js-yaml";
-import { validateBody } from "@/shared/validation/schemas";
+import { isValidationFailure, validateBody } from "@/shared/validation/helpers";
 import { cliAuthOnlyConfigSchema } from "@/shared/validation/schemas/cli";
 import { getOmpCredentials, saveOmpCredentials, deleteOmpCredentials } from "@/lib/db/omp";
+import { sanitizeErrorMessage } from "@omniroute/open-sse/utils/error";
 
 const execAsync = promisify(exec);
 
@@ -20,8 +21,8 @@ const getOmpDbPath = () => path.join(getOmpDir(), "agent.db");
 const getOmpModelsYmlPath = () => path.join(getOmpDir(), "models.yml");
 
 const checkOmpInstalled = async () => {
+  const isWindows = os.platform() === "win32";
   try {
-    const isWindows = os.platform() === "win32";
     const command = isWindows ? "where omp" : "which omp";
     await execAsync(command, { windowsHide: true });
     return true;
@@ -82,17 +83,27 @@ export async function GET() {
       configPath: getOmpModelsYmlPath(),
     });
   } catch (error) {
-    console.log("Error checking Oh My Pi settings:", error);
-    return NextResponse.json({ error: "Failed to check Oh My Pi settings" }, { status: 500 });
+    return NextResponse.json(
+      { error: { message: sanitizeErrorMessage(error) } },
+      { status: 500 }
+    );
   }
 }
 
 export async function POST(request: Request) {
+  let rawBody;
   try {
-    const { success, data, errorResponse } = await validateBody(request, cliAuthOnlyConfigSchema);
-    if (!success || !data) return errorResponse;
+    rawBody = await request.json();
+  } catch {
+    return NextResponse.json({ error: { message: "Invalid JSON body" } }, { status: 400 });
+  }
 
-    const { baseUrl, apiKey } = data;
+  try {
+    const validation = validateBody(cliAuthOnlyConfigSchema, rawBody);
+    if (isValidationFailure(validation)) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
+    }
+    const { baseUrl, apiKey } = validation.data;
 
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
     const keyRef = apiKey || "sk_omniroute";
@@ -124,8 +135,10 @@ export async function POST(request: Request) {
       configPath: getOmpModelsYmlPath(),
     });
   } catch (error) {
-    console.log("Error updating Oh My Pi settings:", error);
-    return NextResponse.json({ error: "Failed to update Oh My Pi settings" }, { status: 500 });
+    return NextResponse.json(
+      { error: { message: sanitizeErrorMessage(error) } },
+      { status: 500 }
+    );
   }
 }
 
@@ -152,7 +165,9 @@ export async function DELETE() {
       message: "OmniRoute removed from Oh My Pi",
     });
   } catch (error) {
-    console.log("Error resetting Oh My Pi settings:", error);
-    return NextResponse.json({ error: "Failed to reset Oh My Pi settings" }, { status: 500 });
+    return NextResponse.json(
+      { error: { message: sanitizeErrorMessage(error) } },
+      { status: 500 }
+    );
   }
 }

@@ -89,9 +89,3 @@ export const cliAuthOnlyConfigSchema = z.object({
   apiKey: z.string().nullable().optional(),
   overwrite: z.boolean().optional(),
 });
-
-export const jcodeConfigSchema = z.object({
-  baseUrl: z.string().trim().min(1, "baseUrl is required"),
-  apiKey: z.string().nullable().optional(),
-  models: z.array(z.string().trim().min(1)).optional(),
-});

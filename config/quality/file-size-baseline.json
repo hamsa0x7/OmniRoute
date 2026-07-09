@@ -251,11 +251,11 @@
     "src/shared/components/OAuthModal.tsx": 993,
     "src/shared/components/RequestLoggerV2.tsx": 1629,
     "src/shared/components/analytics/charts.tsx": 1558,
-    "src/shared/constants/cliTools.ts": 875,
+    "src/shared/constants/cliTools.ts": 955,
     "src/shared/constants/pricing.ts": 1662,
     "src/shared/constants/providers.ts": 3276,
     "src/shared/constants/sidebarVisibility.ts": 1198,
-    "src/shared/services/cliRuntime.ts": 1100,
+    "src/shared/services/cliRuntime.ts": 1118,
     "src/shared/validation/schemas.ts": 2523,
     "_rebaseline_2026_06_28_5275_correlation_id_extract": "Extraction of the safe CorrelationId subset of #5275 (hartmark) — request correlation id stored in call_logs (migration 109) and returned via the X-Correlation-Id response header, WITHOUT the combo/resilience or build/lazy-loading changes (those stay in #5275). Own growth: callLogs.ts 975->985 (correlation_id column on CallLogSummaryRow + read/map), usageHistory.ts 983->988 (correlationId metadata normalize), chat.ts 1575->1632 (withCorrelationId response wiring + combo-failure log carrying correlationId), chatHelpers.ts new 811 (withCorrelationId helper + reqId threading; was 791<cap pre-feature). Cohesive request/logging chokepoint wiring; structural shrink of chat.ts tracked in #3501.",
     "src/sse/handlers/chat.ts": 1778,
@@ -389,7 +389,5 @@
   "_rebaseline_2026_07_08_6556_omniglyph_mode": "PR #6556 (omniglyph engine) own growth: open-sse/services/compression/strategySelector.ts 1025->1043 (+18 at the existing mode-dispatch chokepoints). Two single-mode branches (sync no-op + async resolve via the engine registry, mirroring the rtk single-mode pattern, B-MODE-ENGINE-DECOUPLE) plus the optional providerTransport field threaded through the three options types (gates transport-sensitive engines). The engine itself lives in engines/omniglyphAdapter.ts (<cap); the residual is cohesive dispatch/type wiring not extractable without hiding the dispatch boundary, mirroring the prior compression rebaselines (#5243/#5286/phase4b/#6534). Covered by tests/unit/compression/omniglyph-*.test.ts (22). Structural shrink of this file tracked in #3501.",
   "_rebaseline_2026_07_07_6546_chirag": "PR #6546 (@chirag127) own growth: src/sse/handlers/chatHelpers.ts ->876. Owner-approved rebaseline. Frozen.",
   "_rebaseline_2026_07_07_6525_chirag_image_guard": "PR #6525 (@chirag127, #6457) own growth: chat.ts ->1778 (reject image-only models on /v1/chat/completions; stacks on #6515). Owner-approved. Frozen.",
-  "src/app/(dashboard)/dashboard/api-manager/ApiManagerPageClient.tsx": 3065,
-  "src/shared/constants/cliTools.ts": 960,
-  "src/shared/services/cliRuntime.ts": 1125
+  "_rebaseline_2026_07_09_6318_cli_tools_pi_omp_letta_codewhale_jcode": "PR #6318 own growth: src/shared/constants/cliTools.ts 875->955 (+80 = 5 new CLI tool registry entries — pi, omp, letta, codewhale, jcode) and src/shared/services/cliRuntime.ts 1100->1118 (+18 = runtime-detection wiring for the 5 new tools). Cohesive registry/wiring growth at the existing chokepoints; not extractable. Real sizes (check-file-size.mjs reported)."
 }

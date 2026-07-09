@@ -6,8 +6,9 @@ import path from "path";
 import os from "os";
 import { exec } from "child_process";
 import { promisify } from "util";
-import { validateBody } from "@/shared/validation/schemas";
+import { isValidationFailure, validateBody } from "@/shared/validation/helpers";
 import { cliAuthOnlyConfigSchema } from "@/shared/validation/schemas/cli";
+import { sanitizeErrorMessage } from "@omniroute/open-sse/utils/error";
 
 const execAsync = promisify(exec);
 
@@ -118,18 +119,28 @@ export async function GET() {
       backendMode: settings.preferredBackendMode || "api",
     });
   } catch (error) {
-    console.log("Error checking letta settings:", error);
-    return NextResponse.json({ error: "Failed to check letta settings" }, { status: 500 });
+    return NextResponse.json(
+      { error: { message: sanitizeErrorMessage(error) } },
+      { status: 500 }
+    );
   }
 }
 
 // ── POST - Apply OmniRoute as LM Studio provider + switch to local mode ──
 export async function POST(request: Request) {
+  let rawBody;
   try {
-    const { success, data, errorResponse } = await validateBody(request, cliAuthOnlyConfigSchema);
-    if (!success || !data) return errorResponse;
+    rawBody = await request.json();
+  } catch {
+    return NextResponse.json({ error: { message: "Invalid JSON body" } }, { status: 400 });
+  }
 
-    const { baseUrl, apiKey, overwrite } = data;
+  try {
+    const validation = validateBody(cliAuthOnlyConfigSchema, rawBody);
+    if (isValidationFailure(validation)) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
+    }
+    const { baseUrl, apiKey, overwrite } = validation.data;
 
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
 
@@ -207,8 +218,10 @@ export async function POST(request: Request) {
       needsRestart: true,
     });
   } catch (error) {
-    console.log("Error applying letta settings:", error);
-    return NextResponse.json({ error: "Failed to apply settings" }, { status: 500 });
+    return NextResponse.json(
+      { error: { message: sanitizeErrorMessage(error) } },
+      { status: 500 }
+    );
   }
 }
 
@@ -278,7 +291,9 @@ export async function DELETE() {
       needsRestart: true,
     });
   } catch (error) {
-    console.log("Error resetting letta settings:", error);
-    return NextResponse.json({ error: "Failed to reset letta settings" }, { status: 500 });
+    return NextResponse.json(
+      { error: { message: sanitizeErrorMessage(error) } },
+      { status: 500 }
+    );
   }
 }

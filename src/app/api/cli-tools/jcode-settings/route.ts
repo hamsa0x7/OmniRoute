@@ -1,215 +1,228 @@
-export const dynamic = "force-dynamic";
+"use server";
 
 import { NextResponse } from "next/server";
 import fs from "fs/promises";
 import path from "path";
-import os from "os";
-import { exec } from "child_process";
-import { promisify } from "util";
-import { parseTOML, stringifyTOML } from "confbox";
-import { validateBody } from "@/shared/validation/schemas";
-import { jcodeConfigSchema } from "@/shared/validation/schemas/cli";
-import { sanitizeErrorMessage } from "@omniroute/open-sse/utils/error";
+import { requireCliToolsAuth } from "@/lib/api/requireCliToolsAuth";
+import {
+  ensureCliConfigWriteAllowed,
+  getCliPrimaryConfigPath,
+  getCliRuntimeStatus,
+} from "@/shared/services/cliRuntime";
+import { createBackup } from "@/shared/services/backupService";
+import { saveCliToolLastConfigured, deleteCliToolLastConfigured } from "@/lib/db/cliToolState";
+import { cliModelConfigSchema } from "@/shared/validation/schemas";
+import { isValidationFailure, validateBody } from "@/shared/validation/helpers";
+import { resolveApiKey } from "@/shared/services/apiKeyResolver";
+import { sanitizeErrorMessage } from "@omniroute/open-sse/utils/error.ts";
 
-const execAsync = promisify(exec);
+const TOOL_ID = "jcode";
 
-const getJcodeConfigDir = () => path.join(os.homedir(), ".jcode");
-const getConfigPath = () => path.join(getJcodeConfigDir(), "config.toml");
+const getJcodeConfigPath = (): string =>
+  getCliPrimaryConfigPath(TOOL_ID) ?? path.join(process.env.HOME ?? "~", ".jcode", "config.json");
 
-const getProviderEnvPath = () => {
-  const configDir = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
-  return path.join(configDir, "jcode", "provider-9router.env");
+const getJcodeDir = () => path.dirname(getJcodeConfigPath());
+
+/**
+ * Check if the config file contains OmniRoute settings.
+ */
+const hasOmniRouteConfig = (settings: Record<string, unknown> | null): boolean => {
+  if (!settings) return false;
+  return (
+    typeof settings.baseUrl === "string" &&
+    settings.baseUrl.length > 0 &&
+    settings._managedBy === "omniroute"
+  );
 };
 
-const checkJcodeInstalled = async () => {
+// Read current config.json
+const readConfig = async (): Promise<Record<string, unknown> | null> => {
   try {
-    const isWindows = os.platform() === "win32";
-    const command = isWindows ? "where jcode" : "which jcode";
-    await execAsync(command, { windowsHide: true });
-    return true;
-  } catch {
-    try {
-      await fs.access(getJcodeConfigDir());
-      return true;
-    } catch {
-      return false;
-    }
+    const content = await fs.readFile(getJcodeConfigPath(), "utf-8");
+    return JSON.parse(content) as Record<string, unknown>;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw err;
   }
 };
 
-const readConfig = async () => {
+// GET — check jcode CLI and return current config
+export async function GET(request: Request) {
+  const authError = await requireCliToolsAuth(request);
+  if (authError) return authError;
+
   try {
-    const configPath = getConfigPath();
-    const content = await fs.readFile(configPath, "utf-8");
-    return parseTOML(content);
-  } catch (error) {
-    return { providers: {} };
-  }
-};
+    const runtime = await getCliRuntimeStatus(TOOL_ID);
 
-const has9RouterConfig = (config) => {
-  if (!config || !config.providers) return false;
-
-  const providers = config.providers;
-
-  if (providers["9router"]) return true;
-
-  for (const [name, provider] of Object.entries(providers)) {
-    if (provider.base_url && provider.base_url.includes("localhost:20128")) {
-      return true;
-    }
-  }
-
-  return false;
-};
-
-const writeConfig = async (config) => {
-  const configPath = getConfigPath();
-  const content = stringifyTOML(config);
-  await fs.writeFile(configPath, content, "utf-8");
-};
-
-const readProviderEnv = async () => {
-  try {
-    const envPath = getProviderEnvPath();
-    const content = await fs.readFile(envPath, "utf-8");
-    const env = {};
-
-    for (const line of content.split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) continue;
-
-      const eqIndex = trimmed.indexOf("=");
-      if (eqIndex > 0) {
-        const key = trimmed.slice(0, eqIndex).trim();
-        let value = trimmed.slice(eqIndex + 1).trim();
-
-        if (
-          (value.startsWith('"') && value.endsWith('"')) ||
-          (value.startsWith("'") && value.endsWith("'"))
-        ) {
-          value = value.slice(1, -1);
-        }
-
-        env[key] = value;
-      }
+    if (!runtime.installed || !runtime.runnable) {
+      return NextResponse.json({
+        installed: runtime.installed,
+        runnable: runtime.runnable,
+        command: runtime.command,
+        commandPath: runtime.commandPath,
+        runtimeMode: runtime.runtimeMode,
+        reason: runtime.reason,
+        config: null,
+        message:
+          runtime.installed && !runtime.runnable
+            ? "jcode CLI is installed but not runnable"
+            : "jcode CLI is not installed",
+      });
     }
 
-    return env;
-  } catch {
-    return {};
-  }
-};
-
-const writeProviderEnv = async (env) => {
-  const envPath = getProviderEnvPath();
-  let content = "# jcode provider environment variables\n";
-
-  for (const [key, value] of Object.entries(env)) {
-    content += `${key}="${value}"\n`;
-  }
-
-  await fs.writeFile(envPath, content, "utf-8");
-};
-
-export async function GET() {
-  const isInstalled = await checkJcodeInstalled();
-
-  if (!isInstalled) {
-    return NextResponse.json({
-      installed: false,
-      message:
-        "jcode not installed. Install via: curl -fsSL https://raw.githubusercontent.com/1jehuang/jcode/master/scripts/install.sh | bash",
-    });
-  }
-
-  const config = await readConfig();
-  const has9Router = has9RouterConfig(config);
-
-  return NextResponse.json({
-    installed: true,
-    config,
-    has9Router,
-    configPath: getConfigPath(),
-  });
-}
-
-export async function POST(request: Request) {
-  try {
-    const { success, data, errorResponse } = await validateBody(request, jcodeConfigSchema);
-    if (!success || !data) return errorResponse;
-
-    const { baseUrl, apiKey, models } = data;
-
-    const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-
-    let config = await readConfig();
-
-    if (!config.providers) {
-      config.providers = {};
-    }
-
-    config.providers["9router"] = {
-      type: "openai-compatible",
-      base_url: normalizedBaseUrl,
-      auth: "bearer",
-      api_key_env: "JCODE_9ROUTER_API_KEY",
-      env_file: "provider-9router.env",
-      default_model: models && models.length > 0 ? models[0] : "cc/claude-opus-4-7",
-      requires_api_key: true,
-    };
-
-    const configDir = getJcodeConfigDir();
-    await fs.mkdir(configDir, { recursive: true });
-
-    await writeConfig(config);
-
-    const xdgConfigDir = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
-    const jcodeConfigDir = path.join(xdgConfigDir, "jcode");
-    await fs.mkdir(jcodeConfigDir, { recursive: true });
-
-    const env = await readProviderEnv();
-    env.JCODE_9ROUTER_API_KEY = apiKey;
-    await writeProviderEnv(env);
+    const config = await readConfig();
 
     return NextResponse.json({
-      success: true,
-      message: "jcode configured successfully. Use: jcode --provider-profile 9router",
-      configPath: getConfigPath(),
+      installed: runtime.installed,
+      runnable: runtime.runnable,
+      command: runtime.command,
+      commandPath: runtime.commandPath,
+      runtimeMode: runtime.runtimeMode,
+      reason: runtime.reason,
+      config,
+      hasOmniRoute: hasOmniRouteConfig(config),
+      configPath: getJcodeConfigPath(),
     });
-  } catch (error) {
-    console.error("Error configuring jcode:", error);
+  } catch (err) {
     return NextResponse.json(
-      { error: sanitizeErrorMessage(error instanceof Error ? error.message : String(error)) },
+      { error: { message: sanitizeErrorMessage(err) } },
       { status: 500 }
     );
   }
 }
 
-export async function DELETE() {
-  try {
-    const config = await readConfig();
+// POST — write OmniRoute settings to jcode config.json
+export async function POST(request: Request) {
+  const authError = await requireCliToolsAuth(request);
+  if (authError) return authError;
 
-    if (!config.providers) {
-      return NextResponse.json({ success: true, message: "No configuration to remove" });
+  let rawBody;
+  try {
+    rawBody = await request.json();
+  } catch {
+    return NextResponse.json(
+      { error: { message: "Invalid JSON body" } },
+      { status: 400 }
+    );
+  }
+
+  try {
+    const writeGuard = ensureCliConfigWriteAllowed();
+    if (writeGuard) {
+      return NextResponse.json({ error: writeGuard }, { status: 403 });
     }
 
-    delete config.providers["9router"];
+    // Extract keyId BEFORE Zod validation — Zod strips unknown fields
+    const keyId = typeof rawBody?.keyId === "string" ? rawBody.keyId.trim() : null;
 
-    await writeConfig(config);
+    const validation = validateBody(cliModelConfigSchema, rawBody);
+    if (isValidationFailure(validation)) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
+    }
+    const { baseUrl, model } = validation.data;
+    const apiKey = await resolveApiKey(keyId, validation.data.apiKey);
 
-    const env = await readProviderEnv();
-    delete env.JCODE_9ROUTER_API_KEY;
-    await writeProviderEnv(env);
+    const configPath = getJcodeConfigPath();
+    const jcodeDir = getJcodeDir();
+
+    // Ensure directory exists
+    await fs.mkdir(jcodeDir, { recursive: true });
+
+    // Backup current config before modifying
+    await createBackup(TOOL_ID, configPath);
+
+    // Read existing config or start fresh
+    let existing: Record<string, unknown> = {};
+    try {
+      const raw = await fs.readFile(configPath, "utf-8");
+      existing = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      /* No existing config */
+    }
+
+    // Merge OmniRoute settings (jcode uses OpenAI-compatible config)
+    const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
+    const updated: Record<string, unknown> = {
+      ...existing,
+      baseUrl: normalizedBaseUrl,
+      apiKey,
+      model,
+      _managedBy: "omniroute",
+    };
+
+    await fs.writeFile(configPath, JSON.stringify(updated, null, 2), "utf-8");
+
+    // Persist last-configured timestamp
+    try {
+      saveCliToolLastConfigured(TOOL_ID);
+    } catch {
+      /* non-critical */
+    }
 
     return NextResponse.json({
       success: true,
-      message: "9router configuration removed from jcode",
+      message: "jcode settings applied successfully!",
+      configPath,
     });
-  } catch (error) {
-    console.error("Error removing jcode configuration:", error);
+  } catch (err) {
     return NextResponse.json(
-      { error: sanitizeErrorMessage(error instanceof Error ? error.message : String(error)) },
+      { error: { message: sanitizeErrorMessage(err) } },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE — remove OmniRoute settings from jcode config
+export async function DELETE(request: Request) {
+  const authError = await requireCliToolsAuth(request);
+  if (authError) return authError;
+
+  try {
+    const writeGuard = ensureCliConfigWriteAllowed();
+    if (writeGuard) {
+      return NextResponse.json({ error: writeGuard }, { status: 403 });
+    }
+
+    const configPath = getJcodeConfigPath();
+
+    // Backup before modifying
+    await createBackup(TOOL_ID, configPath);
+
+    // Read existing config
+    let existing: Record<string, unknown> = {};
+    try {
+      const raw = await fs.readFile(configPath, "utf-8");
+      existing = JSON.parse(raw) as Record<string, unknown>;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        return NextResponse.json({ success: true, message: "No config file to reset" });
+      }
+      throw err;
+    }
+
+    // Remove OmniRoute-managed fields
+    delete existing.baseUrl;
+    delete existing.apiKey;
+    delete existing.model;
+    delete existing._managedBy;
+
+    if (Object.keys(existing).length === 0) {
+      await fs.rm(configPath, { force: true });
+    } else {
+      await fs.writeFile(configPath, JSON.stringify(existing, null, 2), "utf-8");
+    }
+
+    // Clear last-configured timestamp
+    try {
+      deleteCliToolLastConfigured(TOOL_ID);
+    } catch {
+      /* non-critical */
+    }
+
+    return NextResponse.json({ success: true, message: "jcode OmniRoute settings removed" });
+  } catch (err) {
+    return NextResponse.json(
+      { error: { message: sanitizeErrorMessage(err) } },
       { status: 500 }
     );
   }
