@@ -589,9 +589,8 @@ export {
   markAllMemoriesNeedReindex,
   getMemoryReindexQueue,
   countMemoryReindexPending,
+  type MemoryVecMeta,
 } from "./db/memoryVec";
-
-export type { MemoryVecMeta } from "./db/memoryVec";
 // T-A-F2: AgentBridge state/mappings/bypass + Inspector custom hosts/sessions
 export * from "./db/agentBridgeState";
 export * from "./db/agentBridgeMappings";
