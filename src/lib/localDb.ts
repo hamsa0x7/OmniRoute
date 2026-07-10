@@ -598,6 +598,7 @@ export * from "./db/agentBridgeMappings";
 export * from "./db/agentBridgeBypass";
 export * from "./db/inspectorCustomHosts";
 export * from "./db/inspectorSessions";
+export * from "./db/omp";
 // Quota Sharing — Group B (planos 16+22)
 export {
   listPools,
