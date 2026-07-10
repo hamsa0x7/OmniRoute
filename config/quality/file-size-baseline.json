@@ -254,7 +254,7 @@
     "src/shared/components/OAuthModal.tsx": 993,
     "src/shared/components/RequestLoggerV2.tsx": 1629,
     "src/shared/components/analytics/charts.tsx": 1558,
-    "src/shared/constants/cliTools.ts": 955,
+    "src/shared/constants/cliTools.ts": 915,
     "src/shared/constants/pricing.ts": 1662,
     "src/shared/constants/providers.ts": 3276,
     "src/shared/constants/sidebarVisibility.ts": 1198,
@@ -275,7 +275,7 @@
     "_rebaseline_2026_07_01_v3843_release_5609": "Rebaseline v3.8.43 (PR #5609 release reconciliation). DRIFT dos 109 commits do ciclo: 8 god-files existentes cresceram (ApiManagerPageClient 2983->3017, combos/page 4594->4608, AddApiKeyModal 868->869, providerPageHelpers 974->996, chat.ts 1635->1647, auth.ts 2401->2403, batchProcessor 828->915, combo.ts 3368->3387) + 2 novos acima do cap (huggingchat.ts 813, tests web-cookie-providers-new 827) + 4 test files cresceram. Modularizacao deferida (blast-radius mid-release); congelado no estado atual p/ o proximo ciclo ratchetar daqui.",
     "src/lib/providers/validation/webProvidersA.ts": 809,
     "src/lib/tokenHealthCheck.ts": 830,
-    "_rebaseline_2026_07_09_6318_cli_tools_pi_omp_letta_codewhale_jcode": "PR #6318 own growth: src/shared/constants/cliTools.ts 875->955 (+80 = 5 new CLI tool registry entries — pi, omp, letta, codewhale, jcode) and src/shared/services/cliRuntime.ts 1100->1118 (+18 = runtime-detection wiring for the 5 new tools). Cohesive registry/wiring growth at the existing chokepoints; not extractable. Real sizes (check-file-size.mjs reported)."
+    "_rebaseline_2026_07_09_6318_cli_tools_omp_letta": "PR #6318 own growth: src/shared/constants/cliTools.ts 862->915 (+53 = 2 new CLI tool registry entries — omp, letta) and src/shared/services/cliRuntime.ts 1110->1128 (+18 = runtime-detection wiring for omp + letta). #6318 originally also shipped duplicate pi/jcode/codewhale entries (those tools were already delivered by a separate PR) — this PR was reduced to only omp+letta, so cliTools.ts shrank from the original 955 to 915; cliRuntime.ts's own #6318 growth was always just the omp+letta wiring (18 lines), so its frozen value (1128) is unchanged. Cohesive registry/wiring growth at the existing chokepoints; not extractable. Real sizes (check-file-size.mjs reported)."
   },
   "testCap": 800,
   "testFrozen": {

@@ -8,6 +8,7 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import { isValidationFailure, validateBody } from "@/shared/validation/helpers";
 import { cliAuthOnlyConfigSchema } from "@/shared/validation/schemas/cli";
+import { requireCliToolsAuth } from "@/lib/api/requireCliToolsAuth";
 import { sanitizeErrorMessage } from "@omniroute/open-sse/utils/error";
 
 const execAsync = promisify(exec);
@@ -85,7 +86,9 @@ const hasOmniRouteConfig = (authFile) => {
 };
 
 // ── GET - Check Letta CLI and read current settings ────────────────────
-export async function GET() {
+export async function GET(request: Request) {
+  const authError = await requireCliToolsAuth(request);
+  if (authError) return authError;
   try {
     const isInstalled = await checkLettaInstalled();
 
@@ -127,7 +130,57 @@ export async function GET() {
 }
 
 // ── POST - Apply OmniRoute as LM Studio provider + switch to local mode ──
+/**
+ * Steps 1-2 of POST: read the existing Letta auth.json, refuse to clobber a real
+ * LM Studio configuration unless `overwrite` is set (409 with conflict info), and back
+ * up a non-OmniRoute provider before it is overwritten. Extracted to keep POST under
+ * the complexity gate.
+ */
+async function prepareLettaAuthFile(
+  overwrite: boolean | undefined
+): Promise<
+  | { conflictResponse: NextResponse }
+  | { authFile: { version: number; providers: Record<string, any> }; authPath: string }
+> {
+  const localBackendDir = getLocalBackendDir();
+  const authPath = getProviderAuthPath();
+  await fs.mkdir(path.join(localBackendDir, "providers"), { recursive: true });
+
+  let authFile = { version: 1, providers: {} as Record<string, any> };
+  try {
+    const existing = await fs.readFile(authPath, "utf-8");
+    authFile = JSON.parse(existing);
+  } catch {
+    /* No existing file */
+  }
+
+  const existingProvider = authFile.providers?.[PROVIDER_NAME];
+  if (existingProvider && !isOmniRouteUrl(existingProvider.base_url) && !overwrite) {
+    // User has lmstudio configured for actual LM Studio — refuse to overwrite
+    return {
+      conflictResponse: NextResponse.json(
+        {
+          error: `lmstudio provider is already configured for ${existingProvider.base_url}. Overwriting will break your existing LM Studio connection. Apply again to overwrite.`,
+          conflict: true,
+          existingBaseUrl: existingProvider.base_url,
+        },
+        { status: 409 }
+      ),
+    };
+  }
+
+  // Back up existing lmstudio provider before overwriting
+  if (existingProvider && !isOmniRouteUrl(existingProvider.base_url)) {
+    const backupPath = getBackupPath();
+    await fs.writeFile(backupPath, JSON.stringify(existingProvider, null, 2));
+  }
+
+  return { authFile, authPath };
+}
+
 export async function POST(request: Request) {
+  const authError = await requireCliToolsAuth(request);
+  if (authError) return authError;
   let rawBody;
   try {
     rawBody = await request.json();
@@ -144,37 +197,12 @@ export async function POST(request: Request) {
 
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
 
-    // ── 1. Read existing auth.json and check for conflicts ──
-    const localBackendDir = getLocalBackendDir();
-    const authPath = getProviderAuthPath();
-    await fs.mkdir(path.join(localBackendDir, "providers"), { recursive: true });
-
-    let authFile = { version: 1, providers: {} };
-    try {
-      const existing = await fs.readFile(authPath, "utf-8");
-      authFile = JSON.parse(existing);
-    } catch {
-      /* No existing file */
+    // ── 1-2. Read auth.json, guard non-OmniRoute conflicts, back up before overwrite ──
+    const prepared = await prepareLettaAuthFile(overwrite);
+    if ("conflictResponse" in prepared) {
+      return prepared.conflictResponse;
     }
-
-    const existingProvider = authFile.providers?.[PROVIDER_NAME];
-    if (existingProvider && !isOmniRouteUrl(existingProvider.base_url) && !overwrite) {
-      // User has lmstudio configured for actual LM Studio — refuse to overwrite
-      return NextResponse.json(
-        {
-          error: `lmstudio provider is already configured for ${existingProvider.base_url}. Overwriting will break your existing LM Studio connection. Apply again to overwrite.`,
-          conflict: true,
-          existingBaseUrl: existingProvider.base_url,
-        },
-        { status: 409 }
-      );
-    }
-
-    // ── 2. Back up existing lmstudio provider before overwriting ──
-    if (existingProvider && !isOmniRouteUrl(existingProvider.base_url)) {
-      const backupPath = getBackupPath();
-      await fs.writeFile(backupPath, JSON.stringify(existingProvider, null, 2));
-    }
+    const { authFile, authPath } = prepared;
 
     // ── 3. Switch to local mode in settings.json ──
     const settingsPath = getSettingsPath();
@@ -226,7 +254,9 @@ export async function POST(request: Request) {
 }
 
 // ── DELETE - Remove OmniRoute configuration ──────────────────────────────
-export async function DELETE() {
+export async function DELETE(request: Request) {
+  const authError = await requireCliToolsAuth(request);
+  if (authError) return authError;
   try {
     // ── 1. Remove lmstudio provider from auth.json, restore backup if exists ──
     const authPath = getProviderAuthPath();

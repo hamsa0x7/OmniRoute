@@ -10,6 +10,7 @@ import { load as yamlLoad, dump as yamlDump } from "js-yaml";
 import { isValidationFailure, validateBody } from "@/shared/validation/helpers";
 import { cliAuthOnlyConfigSchema } from "@/shared/validation/schemas/cli";
 import { getOmpCredentials, saveOmpCredentials, deleteOmpCredentials } from "@/lib/db/omp";
+import { requireCliToolsAuth } from "@/lib/api/requireCliToolsAuth";
 import { sanitizeErrorMessage } from "@omniroute/open-sse/utils/error";
 
 const execAsync = promisify(exec);
@@ -52,7 +53,9 @@ const readModelsYml = async () => {
   }
 };
 
-export async function GET() {
+export async function GET(request: Request) {
+  const authError = await requireCliToolsAuth(request);
+  if (authError) return authError;
   try {
     const installed = await checkOmpInstalled();
 
@@ -91,6 +94,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const authError = await requireCliToolsAuth(request);
+  if (authError) return authError;
   let rawBody;
   try {
     rawBody = await request.json();
@@ -142,7 +147,9 @@ export async function POST(request: Request) {
   }
 }
 
-export async function DELETE() {
+export async function DELETE(request: Request) {
+  const authError = await requireCliToolsAuth(request);
+  if (authError) return authError;
   try {
     // 1. Remove from models.yml
     const modelsYml = await readModelsYml();

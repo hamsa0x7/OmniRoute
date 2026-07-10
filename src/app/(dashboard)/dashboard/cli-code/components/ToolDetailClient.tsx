@@ -15,7 +15,6 @@ import {
   DefaultToolCard,
   DroidToolCard,
   HermesAgentToolCard,
-  JcodeToolCard,
   KiloToolCard,
   OpenClawToolCard,
 } from "./index";
@@ -222,8 +221,6 @@ export default function ToolDetailClient({ toolId, category }: ToolDetailClientP
         return <KiloToolCard {...cardProps} />;
       case "copilot":
         return <CopilotToolCard {...cardProps} />;
-      case "jcode":
-        return <JcodeToolCard {...cardProps} />;
       case "hermes-agent":
         return <HermesAgentToolCard {...cardProps} />;
       case "antigravity":

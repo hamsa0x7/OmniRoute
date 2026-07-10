@@ -820,46 +820,6 @@ OPENAI_API_KEY: "{{apiKey}}"`,
     ],
   },
 
-  pi: {
-    id: "pi",
-    name: "Pi",
-    image: "/providers/pi.svg",
-    color: "#111111",
-    description: "Pi terminal coding harness via OmniRoute",
-    docsUrl: "https://pi.dev",
-    configType: "custom",
-    category: "agent",
-    vendor: "OSS",
-    acpSpawnable: false,
-    baseUrlSupport: "full",
-    defaultCommand: "pi",
-    notes: [
-      {
-        type: "info",
-        text: "Pi reads custom OpenAI-compatible providers from ~/.pi/agent/models.json. Add OmniRoute there, then select the OmniRoute model from Pi's /model menu.",
-      },
-      {
-        type: "warning",
-        text: "Config path: Linux/macOS ~/.pi/agent/models.json • Windows %USERPROFILE%\\.pi\\.pi\\agent\\models.json",
-      },
-    ],
-    guideSteps: [
-      { step: 1, title: "Install Pi", desc: "npm install -g @earendil-works/pi-coding-agent" },
-      { step: 2, title: "API Key", type: "apiKeySelector" },
-      { step: 3, title: "Base URL", value: "{{baseUrl}}", copyable: true },
-      { step: 4, title: "Select Model", type: "modelSelector" },
-      {
-        step: 5,
-        title: "Save Config",
-        desc: "Copy the JSON below to ~/.pi/agent/models.json, then run pi and choose the model with /model.",
-      },
-    ],
-    codeBlock: {
-      language: "json",
-      code: `{\n  "providers": {\n    "omniroute": {\n      "baseUrl": "{{baseUrl}}",\n      "api": "openai-completions",\n      "apiKey": "{{apiKey}}",\n      "authHeader": true,\n      "models": [\n        {\n          "id": "{{model}}",\n          "name": "{{model}} via OmniRoute",\n          "reasoning": true,\n          "input": ["text", "image"],\n          "contextWindow": 200000,\n          "maxTokens": 32000\n        }\n      ]\n    }\n  }\n}`,
-    },
-  },
-
   letta: {
     id: "letta",
     name: "Letta CLI",

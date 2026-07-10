@@ -26,8 +26,7 @@ const TOOL_ID = "codewhale";
  * read/write that path as a legacy fallback.
  */
 const getPrimaryConfigPath = (): string =>
-  getCliPrimaryConfigPath(TOOL_ID) ??
-  path.join(process.env.HOME ?? "~", ".codewhale", "config.toml");
+  getCliPrimaryConfigPath(TOOL_ID) ?? path.join(process.env.HOME ?? "~", ".codewhale", "config.toml");
 
 const getLegacyConfigPath = (): string =>
   path.join(process.env.HOME ?? "~", ".deepseek", "config.toml");
@@ -110,7 +109,10 @@ export async function GET(request: Request) {
       configPath: getPrimaryConfigPath(),
     });
   } catch (err) {
-    return NextResponse.json({ error: { message: sanitizeErrorMessage(err) } }, { status: 500 });
+    return NextResponse.json(
+      { error: { message: sanitizeErrorMessage(err) } },
+      { status: 500 }
+    );
   }
 }
 
@@ -125,7 +127,10 @@ export async function POST(request: Request) {
   try {
     rawBody = await request.json();
   } catch {
-    return NextResponse.json({ error: { message: "Invalid JSON body" } }, { status: 400 });
+    return NextResponse.json(
+      { error: { message: "Invalid JSON body" } },
+      { status: 400 }
+    );
   }
 
   try {
@@ -176,7 +181,10 @@ export async function POST(request: Request) {
       configPath: primaryPath,
     });
   } catch (err) {
-    return NextResponse.json({ error: { message: sanitizeErrorMessage(err) } }, { status: 500 });
+    return NextResponse.json(
+      { error: { message: sanitizeErrorMessage(err) } },
+      { status: 500 }
+    );
   }
 }
 
@@ -219,6 +227,9 @@ export async function DELETE(request: Request) {
       message: "CodeWhale settings removed successfully",
     });
   } catch (err) {
-    return NextResponse.json({ error: { message: sanitizeErrorMessage(err) } }, { status: 500 });
+    return NextResponse.json(
+      { error: { message: sanitizeErrorMessage(err) } },
+      { status: 500 }
+    );
   }
 }
